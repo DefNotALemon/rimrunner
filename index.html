@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Rimrunner</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body data-scheme="kb">
+<canvas id="c"></canvas>
+<div id="ui"></div>
+<div id="touch">
+  <button data-a="jump">JUMP</button><button data-a="crouch">DUCK</button><button data-a="interact">USE</button><button data-a="pack">PACK</button>
+  <button data-a="focus">FOCUS</button><button data-a="aim">AIM</button><button data-a="fire">FIRE</button><button data-a="sprint">RUN</button><button data-a="land">LAND</button>
+</div>
+<div id="pause">Click to capture the mouse and resume</div>
+<div id="title">
+  <div class="tbox">
+    <h1>RIMRUNNER</h1>
+    <p class="sub">Past the last charted lane, every world is a stranger. Mine it. Build it. Sell it. Don't speed.</p>
+    <div class="tbtns"><button id="newgame">New Game</button><button id="continue" style="display:none">Continue</button></div>
+    <div class="tcontrols" id="tcontrols"></div>
+  </div>
+</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

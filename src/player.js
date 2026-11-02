@@ -1,0 +1,355 @@
+// On-foot player: Space Ranger movement, immersive first-person body, lean/idle camera, focus, guns, mining, survival
+import * as THREE from '../vendor/three.module.js';
+import { clamp, damp, lerp } from './util.js';
+import { In } from './input.js';
+import { G, toast, quickPull, stowHand, removeItem, count, lvl, xp, addItem, canAdd } from './state.js';
+import { ITEMS, GUN } from './data.js';
+import { buildPerson, buildBackpackMesh, gunMesh } from './models.js';
+import { sfx } from './audio.js';
+
+// Space Ranger constants (Walk.cs / Character.Stance.cs)
+const WALK = 4.38, SPRINT = 5.04, WALK_GO = 14, WALK_STOP = 14, JUMP_V = 3.8, GRAV = 9.8, CROUCH_MUL = 0.5, CROUCH_EASE = 0.25;
+const EYE = 1.65, EYE_CROUCH = EYE * 0.65;
+const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+
+export class Player {
+  constructor(camera) {
+    this.cam = camera; this.pos = V(); this.vel = V(); this.yaw = 0; this.pitch = 0; this.bodyYaw = 0;
+    this.onGround = true; this.crouchBlend = 0; this.crouch = false; this.gait = 0; this.bobAmt = 0; this.strafeLean = 0; this.landDip = 0; this.landDipV = 0; this.airFall = 0;
+    this.lean = 0; this.leanDir = V(); this.leanKind = ''; this.idleT = 0; this.idleCam = 0; this.thirdPerson = false; this.orbit = 0;
+    this.aim = 0; this.focus = 0; this.focusTarget = null; this.fov = 75; this.recoil = 0; this.fireCd = 0; this.reloadT = 0; this.pitchOff = 0; this.packOpen = false; this.sway = V(); this.lastGun = null;
+    this.mineT = 0; this.mineNode = null; this.stepAcc = 0; this.holsterT = 0; this.exposure = 0; this.dead = false; this.hurtT = 0; this.muzzle = 0; this.stand = 0;
+    this.body = buildPerson({ skin: 0xd8a070, shirt: 0x3a5c8c, height: 1 }, { pants: 0x2a2f3a, hair: 0x201610 });
+    this.body.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    this.pack3 = buildBackpackMesh(); this.pack3.position.set(0, 1.2, 0.2); this.body.add(this.pack3);
+    this.view = new THREE.Group(); this.cam.add(this.view);
+    this.skin = new THREE.MeshStandardMaterial({ color: 0xd8a070, roughness: 0.8 }); this.sleeve = new THREE.MeshStandardMaterial({ color: 0x3a5c8c, roughness: 0.9 });
+    const mkArm = x => { const a = new THREE.Group(); const s = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.085, 0.42), this.sleeve); s.position.z = 0.05; const h = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.13), this.skin); h.position.z = -0.2; a.add(s, h); a.position.set(x, -0.3, -0.35); this.view.add(a); return a; };
+    this.armL = mkArm(-0.2); this.armR = mkArm(0.2);
+    this.gunHolder = new THREE.Group(); this.view.add(this.gunHolder);
+    this.flash = new THREE.PointLight(0xffc880, 0, 12, 2); this.view.add(this.flash); this.flash.position.set(0.2, -0.1, -1);
+    this.beam = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1, 6), new THREE.MeshBasicMaterial({ color: 0x66f0ff })); this.beam.visible = false;
+    this.mark = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.8 }));
+    this.mark.visible = false;
+    this.impacts = [];
+    this.holdId = null; this.cd = {};
+  }
+
+  place(scene, surf) {
+    this.surf = surf; scene.add(this.body); scene.add(this.beam); scene.add(this.mark); this.scene = scene; scene.add(this.cam);
+    this.cam.position.set(0, 0, 0);
+  }
+  teleport(x, z, yaw = 0) {
+    this.pos.set(x, this.surf.heightAt(x, z), z); this.vel.set(0, 0, 0); this.yaw = yaw; this.bodyYaw = yaw; this.onGround = true;
+  }
+
+  supportY(x, z, feetY) {
+    let best = this.surf.heightAt(x, z);
+    for (const c of this.surf.colliders) {
+      if (c.roof || c.maxy === undefined || c.maxy > feetY + 0.45 || c.maxy > 3 || c.id === 'ship') continue;
+      if (x > c.minx - 0.15 && x < c.maxx + 0.15 && z > c.minz - 0.15 && z < c.maxz + 0.15) best = Math.max(best, c.maxy);
+    }
+    return best;
+  }
+
+  update(dt, ctx) {
+    // ctx: {active, npcs, focusable, surf, ui}
+    const { active, surf } = ctx; const hasInput = active && !this.dead && !this.packOpen;
+    const look = In.take();
+    const mv = hasInput ? In.move : { x: 0, y: 0 };
+    const grav = GRAV * surf.gravity;
+    const anyIn = hasInput && (Math.abs(mv.x) + Math.abs(mv.y) > 0.05 || Math.abs(look.x) + Math.abs(look.y) > 1 || In.down.fire || In.down.aim || In.down.jump);
+    this.idleT = anyIn ? 0 : this.idleT + dt;
+    if (anyIn || this.packOpen) { this.idleCam = damp(this.idleCam, 0, 10, dt); }
+    else if (this.idleT > 12) this.idleCam = damp(this.idleCam, 1, 1.4, dt);
+    // ------------- focus & aim state -------------
+    const wantFocus = hasInput && In.down.focus; this.focus = damp(this.focus, wantFocus ? 1 : 0, 9, dt);
+    const wantAim = hasInput && In.down.aim && !wantFocus;
+    if (wantAim && !G.hand && !this.reloading) { if (quickPull()) { sfx('zip', 0.6); this.holsterT = 0; } }
+    this.aim = damp(this.aim, wantAim && G.hand ? 1 : 0, 12, dt);
+    if (G.quickDrawn && G.hand && !wantAim && !In.down.fire) { this.holsterT += dt; if (this.holsterT > 3) { stowHand(); sfx('zip', 0.4); } } else if (wantAim) this.holsterT = 0;
+    if (hasInput && In.pressed.holster) { if (G.hand) { stowHand(); sfx('zip', 0.5); } else if (quickPull()) sfx('zip', 0.5); }
+    if (hasInput && In.pressed.view) this.thirdPerson = !this.thirdPerson;
+    // ------------- look -------------
+    const sens = 0.0022 * (1 - this.aim * 0.4) * (1 - this.focus * 0.45);
+    const pitchMax = 1.5; this.yaw -= look.x * sens; this.pitch = clamp(this.pitch - look.y * sens, -pitchMax, pitchMax);
+    if (this.focus > 0.3) this.updateFocusTarget(ctx); else this.focusTarget = null;
+    if (this.focusTarget && this.focus > 0.5) {   // light RDR2-style assist: ease the view toward the person
+      const t = this.focusTarget, dx = t.pos.x - this.pos.x, dz = t.pos.z - this.pos.z; const wantYaw = Math.atan2(-dx, -dz); let d = wantYaw - this.yaw; while (d > Math.PI) d -= 6.283; while (d < -Math.PI) d += 6.283;
+      this.yaw += d * Math.min(1, dt * 2.2); const dist = Math.hypot(dx, dz); this.pitch = damp(this.pitch, Math.atan2(1.55 - (this.pos.y + EYE), dist) * 1.0, 2.2, dt);
+    }
+    // ------------- stance -------------
+    if (hasInput && In.pressed.crouch) this.crouch = !this.crouch;
+    this.crouchBlend = THREE_move(this.crouchBlend, this.crouch ? 1 : 0, dt / CROUCH_EASE);
+    // ------------- movement (Space Ranger) -------------
+    const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
+    const fwdW = V(-sin, 0, -cos), rightW = V(cos, 0, -sin);
+    const wish = fwdW.clone().multiplyScalar(-mv.y).addScaledVector(rightW, mv.x);
+    const sprinting = hasInput && In.down.sprint && mv.y < -0.5 && !this.crouch && this.aim < 0.5 && this.focus < 0.3;
+    this.sprinting = sprinting;
+    const maxSpeed = (sprinting ? SPRINT : WALK) * lerp(1, CROUCH_MUL, this.crouchBlend) * (1 - this.aim * 0.3) * (1 - this.focus * 0.4) * (this.packOpen ? 0 : 1) * (this.leanSlow ?? 1);
+    const target = wish.clone().multiplyScalar(maxSpeed * Math.min(1, wish.length()));
+    const k = wish.lengthSq() > 0.0001 ? WALK_GO : WALK_STOP;
+    let vH = V(this.vel.x, 0, this.vel.z);
+    if (this.onGround) { vH.lerp(target, 1 - Math.exp(-k * dt)); vH.add(target.clone().sub(vH).clampLength(0, 2.5 * dt)); }
+    else vH.lerp(target, 1 - Math.exp(-2.2 * dt));
+    this.vel.x = vH.x; this.vel.z = vH.z;
+    if (hasInput && In.pressed.jump && this.onGround) { if (this.crouch) this.crouch = false; else { this.vel.y = JUMP_V * (surf.gravity < 0.7 ? 1.5 : 1); this.onGround = false; } }
+    this.vel.y -= grav * dt;
+    this.pos.addScaledVector(this.vel, dt);
+    const sy = this.supportY(this.pos.x, this.pos.z, this.pos.y);
+    if (this.pos.y <= sy + 0.001 && this.vel.y <= 0) {
+      if (!this.onGround) { const hit = clamp((this.airFall - 1.5) / 8, 0, 1); if (this.airFall > 1.5) this.landDipV -= lerp(0.25, 1.6, hit); if (this.airFall > 9) { G.hp -= (this.airFall - 9) * 5; this.hurtT = 0.4; toast('Hard landing.', 'warn'); } this.airFall = 0; sfx('step', 1.4); }
+      this.pos.y = sy; this.vel.y = 0; this.onGround = true;
+    } else { this.onGround = false; if (this.vel.y < 0) this.airFall = Math.max(this.airFall, -this.vel.y); }
+    // collision with walls
+    const p2 = V(this.pos.x, 0, this.pos.z); surf.collide(p2, 0.34, this.pos.y); this.pos.x = p2.x; this.pos.z = p2.z;
+    if (surf.planet.kind !== 'ocean') { /* terrain is walkable everywhere */ }
+    // gait
+    const speed = Math.hypot(this.vel.x, this.vel.z);
+    if (this.onGround) { this.gait += speed * dt / 1.55; this.stepAcc += speed * dt; if (this.stepAcc > (sprinting ? 1.9 : 1.5)) { this.stepAcc = 0; sfx('step', sprinting ? 1.1 : 0.7 * (1 - this.crouchBlend * 0.6)); } }
+    // ------------- body yaw + lean on walls -------------
+    let dBody = this.yaw - this.bodyYaw; while (dBody > Math.PI) dBody -= 6.283; while (dBody < -Math.PI) dBody += 6.283;
+    if (speed > 0.3 || this.aim > 0.3 || Math.abs(dBody) > 1.1) this.bodyYaw += dBody * Math.min(1, dt * (speed > 0.3 ? 10 : 6)); else this.bodyYaw += dBody * Math.min(1, dt * 0.8);
+    this.updateLean(dt, surf, speed);
+    // ------------- weapons / mining -------------
+    this.updateWeapons(dt, ctx, hasInput);
+    // ------------- survival -------------
+    this.updateSurvival(dt, surf, speed);
+    // ------------- camera & body -------------
+    this.updateCamera(dt, speed, mv);
+    this.updateBody(dt, speed);
+    this.hurtT = Math.max(0, this.hurtT - dt);
+  }
+
+  updateLean(dt, surf, speed) {
+    // idle against a wall: lean into it (side shoulder, forward lean, or back to the wall)
+    let want = 0, kind = '', dir = null;
+    if (this.idleT > 0.7 && this.onGround && speed < 0.2 && !this.packOpen && this.aim < 0.2) {
+      let best = null;
+      for (let a = 0; a < 8; a++) {
+        const ang = a * Math.PI / 4 + this.bodyYaw; const dx = -Math.sin(ang), dz = -Math.cos(ang);
+        const h = surf.wallProbe(this.pos.x, this.pos.z, dx, dz, 0.95);
+        if (h && (!best || h.dist < best.dist)) best = { ...h, dx, dz, a };
+      }
+      if (best) {
+        want = 1; dir = V(best.dx, 0, best.dz);
+        const rel = ((best.a * 45) + 360) % 360;   // 0 = wall ahead, 90 = left, 180 = behind, 270 = right
+        kind = rel < 30 || rel > 330 ? 'ahead' : rel > 150 && rel < 210 ? 'back' : rel < 180 ? 'left' : 'right';
+      }
+    }
+    if (want) { this.leanDir.copy(dir); this.leanKind = kind; }
+    this.lean = damp(this.lean, want, want ? 3.2 : 6, dt); this.leanSlow = 1;
+    this.leaning = this.lean > 0.5;
+  }
+
+  updateFocusTarget(ctx) {
+    const f = this.camForward(); let best = null, bs = 0.9;
+    const eye = V(this.pos.x, this.pos.y + EYE, this.pos.z);
+    for (const n of ctx.npcs) {
+      if (n.dead || n.customer) continue; const to = V(n.pos.x, n.pos.y + 1.4, n.pos.z).sub(eye); const d = to.length(); if (d > 14) continue; to.normalize();
+      const s = to.dot(f) - d * 0.004; if (s > bs) { bs = s; best = n; }
+    }
+    this.focusTarget = best;
+  }
+  camForward() { return V(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ')); }
+
+  updateWeapons(dt, ctx, hasInput) {
+    const g = G.hand; this.fireCd -= dt; this.muzzle = Math.max(0, this.muzzle - dt * 12); this.flash.intensity = this.muzzle * 8;
+    this.recoil = damp(this.recoil, 0, 12, dt);
+    if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) { this.reloading = false; if (g) g.mag = GUN[ITEMS[g.id].gun].mag; sfx('ui', 0.7); } }
+    this.beam.visible = false; this.mark.visible = false;
+    if (g) {
+      const spec = GUN[ITEMS[g.id].gun]; if (g.mag === undefined) g.mag = spec.mag;
+      if (hasInput && In.pressed.reload && g.mag < spec.mag && !this.reloading && count('ammo') > 0) { removeItem('ammo', 1); this.reloading = true; this.reloadT = 1.0; sfx('zip', 0.5); }
+      const auto = spec.rate < 0.2;
+      if (hasInput && this.focus < 0.3 && !this.reloading && this.fireCd <= 0 && (auto ? In.down.fire : In.pressed.fire || (In.down.fire && spec.rate < 0.5))) {
+        if (g.mag > 0) this.shoot(g, spec, ctx);
+        else if (In.pressed.fire) { toast(count('ammo') ? 'Empty — press ' + In.label('reload') + ' to reload.' : 'Out of ammo.', 'warn'); this.fireCd = 0.3; }
+      }
+    } else if (hasInput && In.down.fire && this.focus < 0.3) this.mine(dt, ctx);
+    else { this.mineT = 0; }
+    if (!(hasInput && In.down.fire)) this.mineT = Math.max(0, this.mineT - dt * 2);
+  }
+
+  shoot(g, spec, ctx) {
+    this.fireCd = spec.rate; g.mag--; this.recoil = Math.min(1.6, this.recoil + 0.5 + spec.pellets * 0.04); this.pitch += 0.012 * (1 + spec.pellets * 0.08) * (1 - this.aim * 0.4); this.yaw += (Math.random() - 0.5) * 0.004; this.muzzle = 1;
+    sfx(spec.pellets > 4 ? 'shotgun' : g.id === 'rifle' ? 'rifle' : g.id === 'arc' ? 'laser' : 'shot', 1);
+    const origin = V(this.pos.x, this.pos.y + EYE - 0.05, this.pos.z);
+    const dmgMul = (g.q || 1) * (1 + 0.04 * lvl('gunsmith'));
+    for (let i = 0; i < spec.pellets; i++) {
+      const sp = spec.spread * (1 - this.aim * 0.55) * (this.crouch ? 0.8 : 1) * (1 + Math.min(1, Math.hypot(this.vel.x, this.vel.z) / 5));
+      const dir = this.camForward(); dir.x += (Math.random() - 0.5) * sp * 2; dir.y += (Math.random() - 0.5) * sp * 2; dir.z += (Math.random() - 0.5) * sp * 2; dir.normalize();
+      let hit = null, hd = spec.range;
+      for (const n of ctx.npcs) {
+        if (n.dead) continue; const c = V(n.pos.x, n.pos.y + 0.9, n.pos.z); const to = c.clone().sub(origin); const t = to.dot(dir); if (t < 0 || t > hd) continue;
+        const closest = origin.clone().addScaledVector(dir, t); const dy = closest.y - n.pos.y; if (dy < -0.1 || dy > 1.85) continue;
+        if (Math.hypot(closest.x - n.pos.x, closest.z - n.pos.z) < 0.42) { hit = n; hd = t; }
+      }
+      // world blocker
+      const wd = this.rayWorld(origin, dir, hd); if (wd < hd) { hit = null; hd = wd; }
+      const end = origin.clone().addScaledVector(dir, hd);
+      if (hit) { const head = end.y - hit.pos.y > 1.5; ctx.hitNPC(hit, spec.dmg * dmgMul * (head ? 2 : 1), head); this.impact(end, 0xff4040); } else if (hd < spec.range) this.impact(end, 0xffe0a0);
+    }
+  }
+  rayWorld(o, d, max) {
+    let t = 0.3; const s = this.surf;
+    while (t < max) { const p = o.clone().addScaledVector(d, t); if (p.y < s.heightAt(p.x, p.z)) return t; for (const c of s.colliders) { if (c.roof) continue; if (p.x > c.minx && p.x < c.maxx && p.z > c.minz && p.z < c.maxz && p.y < (c.maxy ?? 99)) return t; } t += 0.35; }
+    return max;
+  }
+  impact(pos, col) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), new THREE.MeshBasicMaterial({ color: col, transparent: true })); m.position.copy(pos); this.scene.add(m); this.impacts.push({ m, t: 0.25 });
+  }
+
+  mine(dt, ctx) {
+    const o = V(this.pos.x, this.pos.y + EYE, this.pos.z), f = this.camForward(); let best = null, bd = 9;
+    for (const nd of ctx.surf.nodes) {
+      if (!nd.alive) continue; const to = nd.pos.clone().sub(o); const t = to.dot(f); if (t < 0.4 || t > 8) continue;
+      const cl = o.clone().addScaledVector(f, t); if (cl.distanceTo(nd.pos) < 0.9 * nd.size + 0.3 && t < bd) { bd = t; best = nd; }
+    }
+    if (!best) { this.mineT = 0; return; }
+    if (this.mineNode !== best) { this.mineNode = best; this.mineT = 0; }
+    this.beam.visible = true; const a = o.clone().add(V(0.2, -0.3, 0).applyEuler(new THREE.Euler(0, this.yaw, 0))).addScaledVector(f, 0.4); const mid = a.clone().add(best.pos).multiplyScalar(0.5);
+    this.beam.position.copy(mid); this.beam.scale.set(1 + Math.random(), a.distanceTo(best.pos), 1 + Math.random()); this.beam.quaternion.setFromUnitVectors(V(0, 1, 0), best.pos.clone().sub(a).normalize());
+    this.mark.visible = true; this.mark.position.copy(best.pos);
+    this.mineT += dt * (1 + 0.12 * lvl('mining')) / (0.9 * best.size + 0.4); this.mineFrac = this.mineT;
+    this._mineSfx = (this._mineSfx || 0) - dt; if (this._mineSfx <= 0) { sfx('mine', 1); this._mineSfx = 0.12; }
+    best.m.rotation.x += dt * 2; best.m.position.x = best.pos.x + (Math.random() - 0.5) * 0.03;
+    if (this.mineT >= 1) {
+      const n = Math.max(1, Math.round((1.6 + Math.random() * 2.4) * best.size * (1 + 0.1 * lvl('mining'))));
+      const left = addItem(best.id, n); if (left === n) { toast('Pack is full — free some slots.', 'warn'); this.mineT = 0.9; return; }
+      toast(`+${n - left} ${ITEMS[best.id].name}`, 'good'); sfx('coin', 0.7); xp('mining', 4);
+      best.alive = false; best.m.visible = false; this.mineT = 0; this.mineNode = null; ctx.onMined && ctx.onMined(best);
+    }
+  }
+
+  updateSurvival(dt, surf, speed) {
+    const inTown = surf.planet.settled && Math.hypot(this.pos.x, this.pos.z) < 82; const nearShip = Math.hypot(this.pos.x - surf.padPos.x, this.pos.z - surf.padPos.z) < 13;
+    const safe = inTown || nearShip;
+    G.hunger = Math.max(0, G.hunger - dt * (speed > 4 ? 0.12 : 0.05)); G.thirst = Math.max(0, G.thirst - dt * (speed > 4 ? 0.18 : 0.08));
+    // oxygen on thin worlds
+    if (surf.air < 0.3 && !safe) { G.oxygen = Math.max(0, G.oxygen - dt * (surf.air < 0.05 ? 1.1 : 0.5) * (speed > 4 ? 1.4 : 1)); if (G.oxygen <= 0) { G.hp -= dt * 6; this.hurtT = 0.2; } }
+    else G.oxygen = Math.min(100, G.oxygen + dt * 14);
+    // exposure to cold / heat
+    const T = surf.planet.temp; const extreme = T < 0.15 || T > 0.85; if (extreme && !safe) { this.exposure = Math.min(100, this.exposure + dt * 1.6); if (this.exposure >= 100) { G.hp -= dt * 3; this.hurtT = 0.1; } } else this.exposure = Math.max(0, this.exposure - dt * 8);
+    G.temp = this.exposure;
+    if (G.hunger <= 0 || G.thirst <= 0) G.hp -= dt * 1.2; else if (G.hp < 100 && G.hunger > 40 && G.thirst > 40) G.hp = Math.min(100, G.hp + dt * 0.5);
+    if (G.hp <= 0 && !this.dead) { this.dead = true; ctxDie && ctxDie(); }
+  }
+
+  eatNow() {
+    if (G.hp < 55 && count('medkit')) return this.use('medkit');
+    if (G.oxygen < 40 && count('o2_tank')) return this.use('o2_tank');
+    if (G.thirst <= G.hunger && count('water')) return this.use('water');
+    if (count('ration')) return this.use('ration'); if (count('water')) return this.use('water');
+    toast('Nothing to eat or drink.', 'warn');
+  }
+  use(id) {
+    const it = ITEMS[id]; if (!it.use || !removeItem(id, 1)) return false;
+    for (const [k, v] of Object.entries(it.use)) { const map = { hunger: 'hunger', thirst: 'thirst', health: 'hp', oxygen: 'oxygen' }; G[map[k]] = Math.min(100, G[map[k]] + v); }
+    toast(`Used ${it.name}`, 'good'); sfx('ui', 0.8); return true;
+  }
+
+  updateCamera(dt, speed, mv) {
+    const cam = this.cam; const s = this.surf;
+    // bobbing from Space Ranger: dip at each heel strike, sway side to side, slight roll
+    const feet = this.onGround; const want = feet ? clamp(speed / SPRINT, 0, 1.2) : 0; this.bobAmt = damp(this.bobAmt, want, want > this.bobAmt ? 6 : 9, dt);
+    const p = Math.PI * 2 * this.gait; const boots = lerp(1, 0.6, this.crouchBlend) * (1 - this.aim * 0.6);
+    const vAmp = lerp(0.007, 0.024, clamp(this.bobAmt, 0, 1)) * Math.min(1, this.bobAmt * 4) * boots, hAmp = lerp(0.009, 0.006, clamp(this.bobAmt, 0, 1)) * Math.min(1, this.bobAmt * 4) * boots;
+    let eye = lerp(EYE, EYE_CROUCH, this.crouchBlend) - vAmp * Math.cos(2 * p); let side = hAmp * Math.sin(p);
+    let roll = Math.sin(p) * 0.45 * Math.min(1, this.bobAmt * 3) * boots * 0.0175 * 1.0;
+    let pitch = Math.cos(2 * p) * 0.18 * this.bobAmt * boots * 0.0175;
+    const lateral = (this.vel.x * Math.cos(this.yaw) - this.vel.z * Math.sin(this.yaw)) / SPRINT; this.strafeLean = damp(this.strafeLean, -lateral * 2.2, 7, dt); roll += this.strafeLean * 0.0175;
+    // landing spring
+    this.landDipV += (-140 * this.landDip - 17 * this.landDipV) * dt; this.landDip = clamp(this.landDip + this.landDipV * dt, -0.14, 0.05); eye += this.landDip; pitch += this.landDip * 9 * 0.0175;
+    // breathing + immersive weight: slow figure-eight when still
+    const br = Math.sin(G.time * 1.6) * 0.004 * (1 - this.bobAmt); eye += br;
+    // leaning: shift the head toward the wall, roll away
+    let ox = 0, oz = 0, lr = 0, lp = 0;
+    if (this.lean > 0.01) {
+      const L = this.lean; const d = this.leanDir; const k = { ahead: 0.0, left: 0.22, right: 0.22, back: 0.0 }[this.leanKind] ?? 0.2;
+      ox = d.x * k * L; oz = d.z * k * L;
+      if (this.leanKind === 'left') lr = -0.1 * L; else if (this.leanKind === 'right') lr = 0.1 * L;
+      if (this.leanKind === 'ahead') { lp = -0.1 * L; eye -= 0.05 * L; ox = d.x * 0.1 * L; oz = d.z * 0.1 * L; } if (this.leanKind === 'back') { eye -= 0.08 * L; lp = 0.09 * L; }
+      eye -= 0.04 * L;
+    }
+    // packOpen: dip the view toward the bag
+    this.pitchOff = damp(this.pitchOff, this.packOpen ? -0.55 : 0, 5, dt);
+    const fovBase = 75; const wantFov = fovBase - this.aim * 22 - this.focus * 18 + (this.sprinting ? 5 : 0); this.fov = damp(this.fov, wantFov, 10, dt);
+    const forward = V(0, 0, -1).applyAxisAngle(V(0, 1, 0), this.yaw);
+    const e = V(this.pos.x, this.pos.y + eye, this.pos.z).addScaledVector(forward, 0.1 + (this.crouchBlend * 0.04)).add(V(Math.cos(this.yaw) * side + ox, 0, -Math.sin(this.yaw) * side + oz));
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.pitch + this.pitchOff + pitch + lp - this.recoil * 0.035, this.yaw, roll + lr, 'YXZ'));
+    // third-person orbit (V or idle): GTA V / Skyrim style
+    const tp = Math.max(this.thirdPerson ? 1 : 0, this.idleCam);
+    this.tp = tp;
+    if (tp > 0.01) {
+      this.orbit += dt * 0.12 * this.idleCam;
+      const base = this.thirdPerson && this.idleCam < 0.5 ? this.yaw : this.yaw + this.orbit + Math.PI * 0.2 * this.idleCam;
+      const dist = lerp(0, this.idleCam > 0.5 ? 3.6 : 3.1, tp); const pivot = V(this.pos.x, this.pos.y + 1.5, this.pos.z);
+      const dir = V(Math.sin(base), 0.0, Math.cos(base)).multiplyScalar(dist); dir.y = 0.35 + (this.pitch * -0.8) + (this.idleCam * 0.2);
+      const want = pivot.clone().add(dir);
+      const camPos = e.clone().lerp(want, tp); cam.position.copy(camPos);
+      const look = new THREE.Matrix4().lookAt(camPos, pivot, V(0, 1, 0)); const tq = new THREE.Quaternion().setFromRotationMatrix(look);
+      cam.quaternion.copy(q).slerp(tq, tp);
+    } else { cam.position.copy(e); cam.quaternion.copy(q); }
+    // ground clip
+    const gy = s.heightAt(cam.position.x, cam.position.z) + 0.15; if (cam.position.y < gy) cam.position.y = gy;
+    cam.fov = this.fov; cam.updateProjectionMatrix();
+    // viewmodel: lag behind look for weight (cyberpunk-mod feel)
+    this._lastYaw = this._lastYaw ?? this.yaw; this._lastPitch = this._lastPitch ?? this.pitch;
+    let dy = this.yaw - this._lastYaw; while (dy > Math.PI) dy -= 6.283; while (dy < -Math.PI) dy += 6.283; const dp = this.pitch - this._lastPitch; this._lastYaw = this.yaw; this._lastPitch = this.pitch;
+    this.sway.x = damp(this.sway.x, clamp(dy * 3.2, -0.12, 0.12), 12, dt) + (-dy * 0.9); this.sway.y = damp(this.sway.y, clamp(-dp * 3.2, -0.1, 0.1), 12, dt) + (dp * 0.9);
+    this.sway.x = clamp(this.sway.x, -0.14, 0.14); this.sway.y = clamp(this.sway.y, -0.12, 0.12);
+    this.updateViewmodel(dt, speed, p);
+  }
+
+  updateViewmodel(dt, speed, p) {
+    const g = G.hand; const id = g ? g.id : null;
+    if (id !== this.holdId) { this.gunHolder.clear(); this.holdId = id; if (id) { const m = gunMesh(id); this.gunHolder.add(m); this.gunMesh = m; } else this.gunMesh = null; this.drawT = 0; }
+    this.view.visible = this.tp < 0.3;
+    const bob = Math.min(1, this.bobAmt) * (1 - this.aim * 0.7);
+    const sx = this.sway.x, sy = this.sway.y, kick = this.recoil * 0.06;
+    const rl = this.reloading ? Math.sin((1 - this.reloadT) * Math.PI) : 0;
+    this.drawT = Math.min(1, (this.drawT || 0) + 0.06);
+    if (g) {
+      const hip = V(0.2, -0.2, -0.4), ads = V(0, -0.115, -0.32); const pos = hip.lerp(ads, this.aim);
+      this.gunHolder.position.set(pos.x + sx + Math.sin(p) * 0.006 * bob, pos.y + sy - Math.abs(Math.cos(p)) * 0.01 * bob - rl * 0.12 - (1 - this.drawT) * 0.3, pos.z + kick);
+      this.gunHolder.rotation.set(-this.recoil * 0.05 + rl * 0.5, -sx * 0.6 + (1 - this.aim) * 0.06, sx * 0.3);
+      this.armR.position.set(0.12 + (1 - this.aim) * 0.07, -0.2 - this.aim * 0.02, -0.34); this.armR.rotation.set(0.1, 0.1, 0); this.armL.position.set(-0.04, -0.2, -0.4); this.armL.rotation.set(0, -0.2, 0);
+      this.armR.visible = this.armL.visible = true;
+    } else {
+      this.armL.position.set(-0.24 + sx, -0.34 + sy - Math.abs(Math.cos(p)) * 0.01 * bob, -0.35); this.armR.position.set(0.24 + sx, -0.34 + sy - Math.abs(Math.cos(p + 1.6)) * 0.01 * bob, -0.35);
+      this.armL.rotation.set(-0.1, 0.1, 0); this.armR.rotation.set(this.beam.visible ? -0.5 : -0.1, -0.1, 0);
+      if (this.beam.visible) this.armR.position.set(0.2, -0.22, -0.4);
+    }
+  }
+
+  updateBody(dt, speed) {
+    const b = this.body; b.position.copy(this.pos); b.rotation.y = this.bodyYaw;   // person mesh front is -z, like the camera
+    const showFull = this.tp > 0.3; const u = b.userData;
+    u.head.visible = showFull; b.children.forEach(c => { if (c.geometry && c.geometry.type === 'SphereGeometry' && c !== u.head && c.position.y > 1.6) c.visible = showFull; });
+    // crouch: lower the body
+    const cb = this.crouchBlend; u.torso.position.y = 1.15 - cb * 0.3; u.head.position.y = 1.62 - cb * 0.34 + Math.sin(G.time * 1.6) * 0.004; u.torso.rotation.x = cb * 0.35;
+    u.legL.rotation.x = u.legR.rotation.x = 0; u.legL.position.y = u.legR.position.y = 0.82 - cb * 0.2;
+    const sw = Math.sin(Math.PI * 2 * this.gait) * Math.min(1, speed / 3) * 0.8; u.legL.rotation.x = sw; u.legR.rotation.x = -sw; u.armL.rotation.x = -sw * 0.7; u.armR.rotation.x = sw * 0.7;
+    if (G.hand) { u.armR.rotation.x = -1.35 + this.pitch * 0.5; u.armL.rotation.x = -1.2 + this.pitch * 0.5; u.armL.rotation.z = 0.25; } else u.armL.rotation.z = 0;
+    // lean pose
+    b.rotation.z = 0; if (this.lean > 0.01) {
+      const L = this.lean; b.rotation.order = 'YXZ';
+      if (this.leanKind === 'right') { b.rotation.z = -0.18 * L; } else if (this.leanKind === 'left') { b.rotation.z = 0.18 * L; } else if (this.leanKind === 'back') { b.rotation.x = -0.14 * L; u.legR.rotation.x = -0.5 * L; } else b.rotation.x = 0.16 * L;
+      u.legL.rotation.z = 0.05 * L; u.legR.rotation.z = -0.1 * L; if (!G.hand) { u.armL.rotation.x = -0.9 * L; u.armR.rotation.x = -0.9 * L; u.armL.rotation.y = -0.6 * L; u.armR.rotation.y = 0.6 * L; }
+    } else { b.rotation.x = 0; u.armL.rotation.y = u.armR.rotation.y = 0; u.legL.rotation.z = u.legR.rotation.z = 0; }
+    // visible backpack: guns on the sides
+    this.syncPack3();
+    for (let i = this.impacts.length - 1; i >= 0; i--) { const im = this.impacts[i]; im.t -= dt; im.m.material.opacity = im.t * 4; if (im.t <= 0) { this.scene.remove(im.m); this.impacts.splice(i, 1); } }
+  }
+  syncPack3() {
+    const sig = G.pack.sides.map(s => s ? s.id : '-').join(',') + G.pack.tier; if (sig === this._packSig) return; this._packSig = sig;
+    const sides = this.pack3.userData.sides; sides.forEach(s => s.clear());
+    G.pack.sides.forEach((g, i) => { if (!g) return; const m = gunMesh(g.id); m.rotation.set(Math.PI / 2 + 0.1, 0, 0); m.rotation.y = 0; m.scale.setScalar(0.9); m.position.y = -0.1; sides[i].add(m); });
+    this.pack3.scale.setScalar(1 + G.pack.tier * 0.1);
+  }
+}
+
+let ctxDie = null; export function onDeath(fn) { ctxDie = fn; }
+function THREE_move(a, b, d) { return a < b ? Math.min(b, a + d) : Math.max(b, a - d); }
