@@ -80,7 +80,7 @@ const TRIM = 0x3a3f46, BASE = 0x2e2924;
 export class Ctx {
   constructor(surf, rec, r) {
     this.surf = surf; this.rec = rec; this.r = r; this.K = rec.K; this.P = rec.P; this.bt = new Batch();
-    const ns = rec.door === 'n' || rec.door === 's';
+    const ns = rec.dv[1] !== 0;   // (rec.door is the street-side spot; dv says which wall the door is in)
     this.W = ns ? rec.w : rec.d; this.D = ns ? rec.d : rec.w; this.H = rec.H; this.Hc = rec.H - 0.04;
     this.u0 = -this.W / 2 + 0.16; this.u1 = this.W / 2 - 0.16; this.vb = -this.D / 2 + 0.16; this.vf = this.D / 2 - 0.16;
     this.wallCol = 0xd6d0c2; this.beds = []; this.rooms = []; this.waypoints = {};
@@ -97,6 +97,13 @@ export class Ctx {
   floor(u0, u1, v0, v1, kind, color, tile = 2) { const a = this.aabb(u0, u1, v0, v1); return this.K.box(a.x0, a.x1, 0.03, 0.05, a.z0, a.z1, surfMat(kind, color), { shadow: false, tile }); }
   rug(u, v, w, d, col, border) { this.lb('matte', col, u - w / 2, u + w / 2, v - d / 2, v + d / 2, 0.05, 0.062); if (border !== undefined) this.lb('matte', border, u - w / 2 + 0.25, u + w / 2 - 0.25, v - d / 2 + 0.25, v + d / 2 - 0.25, 0.062, 0.066); }
 
+  // paint the inner faces of the four outer walls (plaster above a darker wainscot) so rooms don't read as bare siding/brick/concrete
+  paintShell(col, dado) {
+    const { u0, u1, vb, vf, Hc } = this, t = 0.025, y = 1.0;
+    const strip = (a, b, c, d) => { this.lb('matte', dado, a, b, c, d, 0, y); this.lb('matte', col, a, b, c, d, y, Hc); this.lb('matte', 0x3a3028, a - (b - a > 0.5 && c === d ? 0 : 0), b, c, d, y, y + 0.05); };
+    strip(u0, u0 + t, vb, vf); strip(u1 - t, u1, vb, vf); strip(u0, u1, vb, vb + t);
+    const dw = 1.15; strip(u0, -dw, vf - t, vf); strip(dw, u1, vf - t, vf); this.lb('matte', col, -dw, dw, vf - t, vf, 2.5, Hc);
+  }
   // ---- walls ----
   // axis 'u': wall runs along u at fixed v. axis 'v': wall runs along v at fixed u. gaps: [centre, width, 'win'?]
   wall(axis, at, a, b, gaps = [], o = {}) {
@@ -182,7 +189,7 @@ export const F = {
   armchair(it, o) { const c = o.col ?? 0x4a5a4a; it.box(c, 0, 0, 0, 0.9, 0.42, 0.85); it.box(c, 0, 0.42, -0.34, 0.9, 0.45, 0.18); for (const s of [-1, 1]) it.box(c, s * 0.38, 0.42, 0.05, 0.16, 0.25, 0.7); it.box(c, 0, 0.42, 0.1, 0.6, 0.12, 0.62); return [0.9, 0.85, 0.88]; },
   coffee(it, o) { const w = o.w ?? 1.1, d = o.d ?? 0.6; it.box(WOOD, 0, 0.36, 0, w, 0.05, d); legs(it, w, d, 0.36, DWOOD, 0.05, 0.05); return [w, d, 0.42]; },
   tv(it, o) { it.box(DWOOD, 0, 0, 0, 1.5, 0.5, 0.45); it.box(0x101418, 0, 0.7, 0, 1.2, 0.7, 0.05, 'matte'); it.box(o.screen ?? 0x3a6a8a, 0, 0.73, 0.03, 1.12, 0.62, 0.01, 'emis'); it.box(DARK, 0, 0.5, 0, 0.3, 0.2, 0.15); return [1.5, 0.45, 1.1]; },
-  bookshelf(it, o) { const w = o.w ?? 1.2; it.box(WOOD, 0, 0, 0, w, 2.0, 0.34); it.box(0x1c140c, 0, 0.05, 0.03, w - 0.1, 1.9, 0.3); for (let l = 0; l < 5; l++) { it.box(WOOD, 0, 0.05 + l * 0.4, 0.02, w - 0.06, 0.04, 0.32); let x = -w / 2 + 0.1; while (x < w / 2 - 0.15) { const bw = 0.05 + Math.abs(Math.sin(x * 37 + l)) * 0.06; it.box([0x8a2a2a, 0x2a5a8a, 0x3a6a3a, 0xc8a040, 0x5a3a6a, 0xd8d0c0][Math.abs((x * 100 + l * 7) | 0) % 6], x + bw / 2, 0.09 + l * 0.4, 0.04, bw, 0.28 + Math.abs(Math.sin(x * 11)) * 0.05, 0.22); x += bw + 0.01; } } return [w, 0.34, 2.0]; },
+  bookshelf(it, o) { const w = o.w ?? 1.2; it.box(WOOD, 0, 0, 0, w, 2.0, 0.34); it.box(0x1c140c, 0, 0.05, -0.14, w - 0.1, 1.9, 0.04); for (const s of [-1, 1]) it.box(WOOD, s * (w / 2 - 0.02), 0, 0, 0.04, 2.0, 0.34); it.box(WOOD, 0, 1.95, 0, w, 0.05, 0.34); for (let l = 0; l < 5; l++) { it.box(WOOD, 0, 0.05 + l * 0.4, 0.02, w - 0.06, 0.04, 0.32); let x = -w / 2 + 0.1; while (x < w / 2 - 0.15) { const bw = 0.05 + Math.abs(Math.sin(x * 37 + l)) * 0.06; it.box([0x8a2a2a, 0x2a5a8a, 0x3a6a3a, 0xc8a040, 0x5a3a6a, 0xd8d0c0][Math.abs((x * 100 + l * 7) | 0) % 6], x + bw / 2, 0.09 + l * 0.4, 0.04, bw, 0.28 + Math.abs(Math.sin(x * 11)) * 0.05, 0.22); x += bw + 0.01; } } return [w, 0.34, 2.0]; },
   plant(it, o) { it.cyl(0x8a5a3a, 0, 0, 0, 0.22, 0.4, 'matte', { top: 0.8 }); it.sph(o.col ?? 0x3a7a3a, 0, 0.85, 0, 0.42, 'matte', { sy: 1.2 }); it.sph(0x2f6a30, 0.15, 1.15, 0.1, 0.28); return [0.5, 0.5, 1.4]; },
   floorlamp(it, o) { it.cyl(DARK, 0, 0, 0, 0.16, 0.04); it.cyl(DARK, 0, 0, 0, 0.025, 1.55); it.cyl(0xffe6b0, 0, 1.45, 0, 0.2, 0.3, 'emis', { top: 0.7 }); return [0.35, 0.35, 1.7]; },
   rugplain: null,
@@ -283,6 +290,20 @@ export const F = {
   noticeboard(it, o) { const w = o.w ?? 1.8; it.box(0x5a4028, 0, 1.0, 0, w + 0.1, 1.2, 0.04); it.box(0xb89a68, 0, 1.05, 0.03, w, 1.1, 0.02); for (let i = 0; i < 7; i++) it.box([0xf2efe0, 0xe8d890, 0xd8e0e8][i % 3], -w / 2 + 0.2 + (i * 0.23) % (w - 0.3), 1.2 + ((i * 3) % 4) * 0.2, 0.05, 0.17, 0.22, 0.01); return [0, 0, 0]; },
   cellstuff(it, o) { it.box(0xa8acb2, 0, 0, 0, 0.45, 0.4, 0.4, 'metal'); it.box(0xa8acb2, 0, 0.4, -0.1, 0.4, 0.4, 0.15, 'metal'); it.box(0xa8acb2, 0.5, 0.6, 0, 0.4, 0.2, 0.3, 'metal'); return [1.0, 0.4, 0.9]; },
   flag(it, o) { it.cyl(STEEL, 0, 0, 0, 0.04, 3.0, 'metal'); it.cyl(0xc8b060, 0, 3.0, 0, 0.06, 0.08, 'metal'); it.box(o.col ?? 0x1d2c6a, 0.5, 1.9, 0, 0.95, 0.6, 0.02); it.box(0xe8e4d0, 0.25, 2.05, 0.015, 0.2, 0.2, 0.01); return [0.2, 0.2, 3]; },
+  stanchion(it, o) { it.cyl(0xc8b060, 0, 0, 0, 0.14, 0.03, 'metal'); it.cyl(0xc8b060, 0, 0, 0, 0.025, 0.95, 'metal'); it.sph(0xc8b060, 0, 0.97, 0, 0.05, 'metal'); return [0.3, 0.3, 0]; },
+  pedestal(it, o) { it.cyl(0x9a9a92, 0, 0, 0, 0.3, 0.9, 'matte', { seg: 12, top: 0.8 }); it.cyl(0xd8d4c8, 0, 0.9, 0, 0.34, 0.05, 'matte', { seg: 12 }); it.sph(o.col ?? 0xc27a4a, 0, 1.08, 0, 0.14, 'metal', { seg: 5 }); return [0.7, 0.7, 0.95]; },
   mirror(it, o) { it.box(0x3a2a1c, 0, 1.0, 0, o.w ?? 1.0, o.h ?? 1.4, 0.04); it.box(0xa8d0e8, 0, 1.05, 0.03, (o.w ?? 1.0) - 0.1, (o.h ?? 1.4) - 0.1, 0.01, 'glass'); return [0, 0, 0]; },
 };
 delete F.rugplain; delete F.poolsign;
+
+// one shared material for the inside face of every window: white glass + dark frame/mullions, tinted by Surface.timeOfDay() to match sky/night
+let _iw = null;
+export function innerWindowMat() {
+  if (_iw) return _iw;
+  const c = document.createElement('canvas'); c.width = 140; c.height = 170; const x = c.getContext('2d');
+  x.fillStyle = '#34383e'; x.fillRect(0, 0, 140, 170); x.fillStyle = '#ffffff'; x.fillRect(10, 10, 120, 150);
+  x.fillStyle = '#34383e'; x.fillRect(67, 10, 6, 150); x.fillRect(10, 82, 120, 6);
+  x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(10, 10, 120, 6);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return _iw = new THREE.MeshBasicMaterial({ map: t, color: 0xa9cdee });
+}

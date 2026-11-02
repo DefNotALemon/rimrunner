@@ -21,7 +21,7 @@ function shell(cx, S) {
     for (let k = 0; k < n; k++) cx.light(rm.u0 + (k + 0.5) * w / n, (cx.vb + vp) / 2, { w: Math.min(1.1, w - 1.2), d: 0.4, lamp: k === 0 });
   });
   cx.wall('u', vp, cx.u0, cx.u1, gaps);
-  cx.rec.back = cx.P(0, vp + 1.4);
+  cx.rec.back = cx.P(0, vp + 1.4); cx.rec.entry = cx.P(0, cx.vf - 0.8);
   const nu = Math.max(2, Math.round(cx.W / 5.5)), nv = Math.max(1, Math.round((cx.vf - vp - 0.1) / 4.5));
   for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) cx.light(cx.u0 + (i + 0.5) * (cx.u1 - cx.u0) / nu, vp + 0.1 + (j + 0.5) * (cx.vf - vp - 0.1) / nv, { w: 1.5, d: 0.5, lamp: (i + j) % 2 === 0 });
   return vp;
@@ -58,6 +58,9 @@ function exchange(cx) {
   cx.put('kiosk', -3.8, 5.6, 0); cx.put('kiosk', 3.8, 5.6, 0, { screen: 0xffd37a });
   cx.put('plant', -9.1, vf - 0.5); cx.put('plant', 9.1, vf - 0.5);
   cx.rug(0, 4.4, 7.5, 2.8, 0x2a3a5a, 0x3a4a6a);
+  for (const [u, v] of [[-2.9, 4.1], [2.9, 4.1], [-2.9, 6.1], [2.9, 6.1]]) cx.put('stanchion', u, v, 0);
+  for (const [u, v] of [[-8.3, 3.0], [8.3, 3.0]]) cx.put('pedestal', u, v, 0, { nocol: false });
+  cx.put('pedestal', -6.4, 0.2, 0); cx.put('pedestal', 6.4, 0.2, 0); cx.put('cabinet', -9.6 + 0.3, vp + 0.5, PI / 2, { col: 0x6a6a62 });
 }
 
 // ---------------------------------------------------------------- Forge & Barrel (18 x 16)
@@ -88,6 +91,8 @@ function gunsmith(cx) {
   cx.put('glasscase', -3.8, 5.2, 0, { w: 2.4, goods: 'gun' }); cx.put('glasscase', 3.8, 5.2, 0, { w: 2.4, goods: 'gun' });
   cx.put('noticeboard', -2.4, vp + 0.12 + 0.02, 0, { w: 1.2, nocol: true });
   cx.put('plant', -8.2, vf - 0.5); cx.put('plant', 4.4, vf - 0.5);
+  cx.put('glasscase', -0.0, 5.9, 0, { w: 3.0, goods: 'gun' }); cx.put('table', 6.6, 6.0, 0, { w: 1.6, d: 0.9, col: 0x5a4028 }); cx.put('stool', 6.1, 6.7, 0, { nocol: true }); cx.put('stool', 7.1, 6.7, 0, { nocol: true });
+  cx.put('bench', -6.3, vf - 0.4, PI, { w: 2.0, back: true, col: 0x4a3a2a }); cx.put('crates', 8.1, 0.1, 0, { n: 3, s: 0.6, k: 3 }); cx.put('target', -6.0, 1.0, 0, { nocol: true });
 }
 
 // ---------------------------------------------------------------- The Dry Dock cantina (20 x 16)
@@ -122,7 +127,7 @@ function cantina(cx) {
   cx.lb('matte', 0x20202a, -2.6, 2.6, 3.6, 7.2, 0.05, 0.062); for (let i = 0; i < 5; i++) for (let j = 0; j < 4; j++) if ((i + j) % 2 === 0) cx.lb('emis', [0x7a2a8a, 0x2a6a8a][(i + j) % 4 === 0 ? 0 : 1], -2.6 + i * 1.04 + 0.04, -2.6 + (i + 1) * 1.04 - 0.04, 3.6 + j * 0.9 + 0.04, 3.6 + (j + 1) * 0.9 - 0.04, 0.062, 0.066);
   cx.put('drumkit', -7.6, 6.2, PI); cx.put('speaker', -9.2, 5.0, PI / 2); cx.put('speaker', -5.8, 6.9, PI); cx.put('micstand', -6.0, 5.2, PI, { nocol: true }); cx.rug(-7.6, 6.0, 3.6, 2.4, 0x3a1a3a);
   // tables
-  [[-7.6, 0.6], [-7.6, 3.2], [-4.6, 5.3], [4.0, 6.8]].forEach(([u, v], i) => { cx.put('table', u, v, 0, { round: true, w: 1.0, col: 0x5a3a24 }); for (let k = 0; k < 3; k++) { const a = k * 2.1 + i; cx.put('stool', u + Math.cos(a) * 0.82, v + Math.sin(a) * 0.82, 0, { nocol: true }); } });
+  [[-7.6, 0.6], [-7.6, 3.2], [-4.6, 5.3]].forEach(([u, v], i) => { cx.put('table', u, v, 0, { round: true, w: 1.0, col: 0x5a3a24 }); for (let k = 0; k < 3; k++) { const a = k * 2.1 + i; cx.put('stool', u + Math.cos(a) * 0.82, v + Math.sin(a) * 0.82, 0, { nocol: true }); } });
   // booths on the right wall
   for (let i = 0; i < 3; i++) cx.put('booth', u1 - 1.2, 0.2 + i * 2.3, -PI / 2, { col: [0x7a2a3a, 0x2a4a6a, 0x3a5a3a][i] });
   cx.put('pooltable', 5.5, 5.0, 0); cx.put('jukebox', u1 - 0.5, vf - 0.55, -PI / 2);
@@ -146,7 +151,7 @@ function outfitter(cx) {
   cx.put('rack', -7.4, vb + 0.4, 0, { w: 2.6 }); cx.put('rack', -4.1, vb + 0.4, 0, { w: 2.2 }); cx.put('rack', u0 + 0.4, -4.3, PI / 2, { w: 2.4, levels: 2 });
   cx.put('crates', -2.2, -3.4, 0, { n: 3, s: 0.65 }); cx.put('crates', -2.3, -5.6, 0, { n: 2, s: 0.7, k: 2 });
   // office
-  cx.put('desk', 7.2, vb + 0.5, 0, { w: 1.5 }); cx.put('chair', 7.2, vb + 1.5, PI); cx.put('cabinet', 5.0, -6.4, PI / 2); cx.put('cabinet', 5.0, -5.7, PI / 2); cx.put('rack', 6.5, -3.7, 0, { w: 1.6, levels: 2 }); cx.put('plant', 8.3, -3.8);
+  cx.put('desk', 7.2, vb + 0.5, 0, { w: 1.5 }); cx.put('chair', 7.2, vb + 1.5, PI); cx.put('cabinet', 5.0, -6.4, PI / 2); cx.put('cabinet', 5.0, -5.7, PI / 2); cx.put('crates', 8.0, -3.8, 0, { n: 2, s: 0.55 }); cx.put('plant', 5.1, -3.8);
   // sales
   [[-5.0, 0.9, 0], [-5.0, 3.5, 1], [-5.0, 5.8, 2], [5.0, 3.5, 3], [5.0, 5.8, 4], [2.9, -0.7, 5]].forEach(([u, v, k]) => cx.put('clothrack', u, v, 0, { k }));
   cx.put('shelf', u0 + 0.25, 0.9, PI / 2, { len: 2.6, goods: ['cloth', 'box'], r }); cx.put('shelf', u0 + 0.25, 4.1, PI / 2, { len: 2.6, goods: ['cloth', 'cyl'], r });
@@ -167,9 +172,8 @@ function patrol(cx) {
   // holding cells behind bars
   const cw = (-0.6 - u0) / 3; const edges = [0, 1, 2, 3].map(i => u0 + i * cw); const barV = -3.9;
   cx.wall('v', edges[1], vb, barV, []); cx.wall('v', edges[2], vb, barV, []);
-  cx.bars(u0, -0.6, barV, [[(edges[0] + edges[1]) / 2, 0.9], [(edges[1] + edges[2]) / 2, 0.9]]);
+  cx.bars(u0, -0.6, barV, [[edges[0] + 1.95, 1.1], [edges[1] + 1.95, 1.1]]);
   for (let i = 0; i < 3; i++) { const L = edges[i], R = edges[i + 1]; cx.put('bunk', L + 0.7, vb + 1.2, 0, { frame: 0x4a4e54, blanket: 0x6a6e5a }); cx.put('cellstuff', R - 1.0, vb + 0.3, 0); cx.light((L + R) / 2, vb + 1.4, { w: 0.6, d: 0.3, lamp: i === 1, col: 0xd8e4ff }); }
-  cx.put('bench', -6.3, -2.85, 0, { w: 1.6, metal: true, col: 0x5a5e64, nocol: false }); cx.put('locker', -3.3, -2.45, PI, { n: 1 });
   cx.lb('matte', 0xb02a2a, u0, -0.6, barV + 0.15, barV + 0.35, 0.05, 0.062);
   // interview room
   cx.put('table', 2.6, -5.0, 0, { w: 1.5, d: 0.8, col: 0x74787e }); cx.put('chair', 2.6, -4.15, PI, { col: 0x5a5e64 }); cx.put('chair', 2.6, -5.85, 0, { col: 0x5a5e64 }); cx.put('mirror', 3.95, -6.2, -PI / 2, { w: 0.01, h: 0.01, nocol: true });
@@ -293,6 +297,6 @@ const LAYOUT = { exchange, gunsmith, cantina, outfitter, patrol, lease, house, h
 
 export function furnishBuilding(surf, rec, r) {
   const fn = LAYOUT[rec.id]; if (!fn) return;
-  const cx = new Ctx(surf, rec, r); fn(cx); cx.finish();
+  const cx = new Ctx(surf, rec, r); fn(cx); cx.paintShell(cx.wallCol, cx.dado ?? 0x6e625a); cx.finish();
   rec.beds = cx.beds; rec.vp = cx.vp;
 }

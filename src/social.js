@@ -210,7 +210,7 @@ export class Social {
     const b = surf.B.lease; const prof = makePerson(Math.floor(Math.random() * 1e9), surf.planet, surf.sys); const a = Math.random() * 6.283;
     const start = { x: Math.cos(a) * 44, z: Math.sin(a) * 44 }; const n = surf.spawnNPC(prof, { customer: true }); n.pos.set(start.x, 0, start.z);
     const counter = { x: b.back.x + b.dv[0] * 4.2, z: b.back.z + b.dv[1] * 4.2 };
-    n.customer = { i: 0, path: [{ x: b.door.x, z: b.door.z }, { x: b.x + b.dv[0] * 1.5, z: b.z + b.dv[1] * 1.5 }, counter], done: (npc) => {
+    n.customer = { i: 0, path: [{ x: b.door.x, z: b.door.z }, (b.entry ? { x: b.entry.x, z: b.entry.z } : { x: b.x + b.dv[0] * 1.5, z: b.z + b.dv[1] * 1.5 }), counter], done: (npc) => {
       const c = npc.customer; if (!c.bought) { c.bought = true; const res = this.customerBuys(prof); c.res = res; if (res) ui.sayShop(`${prof.name} bought ${ITEMS[res.item.id].name} for ${fmt(res.price)} cr`); c.path = [{ x: b.door.x, z: b.door.z }, { x: start.x, z: start.z }]; c.i = 0; c.leaving = true; c.done = (n2) => { surf.root.remove(n2.mesh); surf.npcs.splice(surf.npcs.indexOf(n2), 1); }; }
     } };
   }

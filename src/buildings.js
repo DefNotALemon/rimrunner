@@ -74,7 +74,8 @@ export function makeBuilding(surf, b) {
     const a = Math.atan2(nx, nz); const lit = r() < 0.75; const g = new THREE.Mesh(winGeo, glassMat(lit)); g.position.set(px + nx * 0.2, 1.7, pz + nz * 0.2); g.rotation.y = a; surf.root.add(g);
     const f = new THREE.Mesh(frameGeo, trim); f.position.set(px + nx * 0.12, 1.7, pz + nz * 0.12); f.rotation.y = a; f.castShadow = true; surf.root.add(f);
     const s = new THREE.Mesh(sillGeo, trim); s.position.set(px + nx * 0.2, 0.84, pz + nz * 0.2); s.rotation.y = a; surf.root.add(s);
-    const g2 = new THREE.Mesh(winGeo, g.material); g2.position.set(px - nx * 0.05, 1.7, pz - nz * 0.05); g2.rotation.y = a + Math.PI; surf.root.add(g2);
+    // interior side: one framed pane on the inner wall face, tinted to the sky outside
+    const g2 = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.7), surf.innerGlass); g2.position.set(px - nx * (T + 0.03), 1.7, pz - nz * (T + 0.03)); g2.rotation.y = a + Math.PI; surf.root.add(g2);
   };
   const winsAlong = (len, center, skipDoor) => { const n = Math.max(1, Math.floor((len - 1.5) / 3.4)); const out = []; for (let i = 0; i < n; i++) { const u = (i + 0.5) / n * len - len / 2; if (skipDoor && Math.abs(u) < DW + 1) continue; out.push(u); } return out; };
   const faces = [['n', 0, -1, b.w, true], ['s', 0, 1, b.w, true], ['w', -1, 0, b.d, false], ['e', 1, 0, b.d, false]];

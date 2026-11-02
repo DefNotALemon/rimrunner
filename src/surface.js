@@ -10,6 +10,7 @@ import { HeightField, Terrain, Scatter } from './terrain.js';
 import { Sky } from './sky.js';
 import { makeBuilding, dressTown } from './buildings.js';
 import { surfMat } from './textures.js';
+import { innerWindowMat } from './interior-kit.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const std = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, metalness: 0.05, ...o });
@@ -34,7 +35,10 @@ export class Surface {
     this.planet = planet; this.sys = sys; this.kind = planet.kind; const K = PLANET_KINDS[planet.kind];
     this.K = K; this.air = planet.air; this.gravity = clamp(planet.g, 0.25, 1.5);
     this.root.clear(); this.colliders = []; this.interactables = []; this.npcs = []; this.nodes = []; this.pickups = []; this.buildings = []; this.nodeTiles.clear(); this.depleted = {};
-    this.windowMats = []; this.windowMatsDark = []; this.blinkers = []; this.bulbs = []; this.signs = []; this.interiorLamps = []; this.lamps = []; this.shipG = null; this.B = null; this.lease = null; this.shop = null;
+    this.windowMats = []; this.windowMatsDark = []; this.blinkers = []; this.bulbs = []; this.signs = []; this.interiorLamps = []; this.roomLamps = []; this.homes = []; this.commons = null; this.lamps = []; this.shipG = null; this.B = null; this.lease = null; this.shop = null; this._bedUsed = null; this.beds = [];
+    // a small fixed pool of point lights is moved onto the rooms nearest the player (constant light count = no shader recompiles)
+    this.lampPool = []; for (let i = 0; i < 5; i++) { const l = new THREE.PointLight(0xffe2b0, 0, 15, 1.6); l.userData.rec = null; this.root.add(l); this.lampPool.push(l); }
+    this.innerGlass = innerWindowMat();   // what you see out of a window from inside
     const hf = this.hf = new HeightField(planet, planet.kind, K);
     this.flatR = planet.settled ? 80 : 24;
     hf.flats.push({ x: 0, z: 0, r: this.flatR, blend: planet.settled ? 70 : 30, h: 0 });
@@ -142,15 +146,26 @@ export class Surface {
   building(b) { const rec = makeBuilding(this, b); this.buildings.push(rec); this.footprints.push({ minx: rec.x0 - 0.6, maxx: rec.x1 + 0.6, minz: rec.z0 - 0.6, maxz: rec.z1 + 0.6, top: rec.H + 2.5 }); return rec; }
   buildTown(r) {
     const specs = [
-      { id: 'exchange', name: 'Rim Exchange', x: -26, z: -28, w: 15, d: 11, door: 's', style: 'brick', color: 0xb5694c, awning: 0x2a5a7a, sign: '#3a2a10' },
-      { id: 'gunsmith', name: 'Forge & Barrel', x: 0, z: -28, w: 16, d: 12, door: 's', style: 'metal', color: 0x8a9098, awning: 0x7a2a2a, sign: '#3a1010', fg: '#ff9a6a' },
-      { id: 'cantina', name: 'The Dry Dock', x: 27, z: -28, w: 15, d: 12, door: 's', style: 'siding', color: 0x8a5a7a, roof: 0x3a2434, awning: 0x4a2a5a, sign: '#201030', fg: '#ff8ae0' },
-      { id: 'lease', name: 'For Lease', x: -24, z: 32, w: 13, d: 10, door: 'n', style: 'siding', color: 0x8a9a7a, roof: 0x4a5a3a, awning: 0x3a5a3a, sign: '#10281c', fg: '#7aff9a' },
-      { id: 'patrol', name: 'Rimway Patrol', x: 2, z: 33, w: 14, d: 10, door: 'n', style: 'concrete', color: 0x8a96a8, awning: 0x1d2c6a, sign: '#0c1a3c', fg: '#6aa8ff' },
-      { id: 'outfitter', name: 'Outfitters', x: 28, z: 32, w: 14, d: 10, door: 'n', style: 'siding', color: 0xa07a50, roof: 0x5a3a22, awning: 0x7a5a2a, sign: '#2a1c08' },
+      { id: 'exchange', name: 'Rim Exchange', x: -27, z: -31, w: 20, d: 16, door: 's', style: 'brick', color: 0xb5694c, awning: 0x2a5a7a, sign: '#3a2a10' },
+      { id: 'gunsmith', name: 'Forge & Barrel', x: 0, z: -31, w: 18, d: 16, door: 's', style: 'metal', color: 0x8a9098, awning: 0x7a2a2a, sign: '#3a1010', fg: '#ff9a6a' },
+      { id: 'cantina', name: 'The Dry Dock', x: 28, z: -31, w: 20, d: 16, door: 's', style: 'siding', color: 0x8a5a7a, roof: 0x3a2434, awning: 0x4a2a5a, sign: '#201030', fg: '#ff8ae0' },
+      { id: 'lease', name: 'For Lease', x: -26, z: 35, w: 18, d: 14, door: 'n', style: 'siding', color: 0x8a9a7a, roof: 0x4a5a3a, awning: 0x3a5a3a, sign: '#10281c', fg: '#7aff9a' },
+      { id: 'patrol', name: 'Rimway Patrol', x: 2, z: 35, w: 18, d: 14, door: 'n', style: 'concrete', color: 0x8a96a8, awning: 0x1d2c6a, sign: '#0c1a3c', fg: '#6aa8ff' },
+      { id: 'outfitter', name: 'Outfitters', x: 30, z: 35, w: 18, d: 14, door: 'n', style: 'siding', color: 0xa07a50, roof: 0x5a3a22, awning: 0x7a5a2a, sign: '#2a1c08' },
     ];
     this.B = {}; specs.forEach(s => { this.B[s.id] = this.building(s); });
-    for (const [x, z, d, c] of [[52, 0, 'w', 0x8a7a6a], [-56, -4, 'e', 0x6a7a8a], [54, 24, 'w', 0x8a6a6a]]) this.building({ id: 'house', kind: 'house', name: 'Quarters', x, z, w: 9, d: 9, door: d, style: 'siding', color: c, roof: r.pick([0x5a3a2a, 0x3a4a5a, 0x4a4a3a]), sign: '#222' });
+    // housing: every resident gets a bed with room to spare. Quarters (3 bedrooms, ~5 beds) scale with population, and the Commons dormitory (28 beds) opens once the colony is big enough
+    const pop = this.planet.pop, nPeople = clamp(7 + Math.floor(pop / 120), 7, 15);
+    const slots = [[57, 8, 'w'], [57, 26, 'w'], [57, 44, 'w'], [-60, 8, 'e'], [-60, -26, 'e'], [-52, 44, 'e']];
+    const bedCount = () => this.homes.reduce((a, h) => a + h.beds.reduce((q, b) => q + b.n, 0), 0) + (this.commons ? this.commons.beds.reduce((q, b) => q + b.n, 0) : 0);
+    const wantHomes = clamp(3 + Math.floor(pop / 160), 3, 6);
+    for (let i = 0; i < slots.length; i++) {
+      if (i >= wantHomes && bedCount() >= nPeople * 2) break;
+      const [x, z, d] = slots[i];
+      this.homes.push(this.building({ id: 'house', kind: 'house', name: 'Quarters', x, z, w: 12, d: 16, door: d, style: 'siding', color: r.pick([0x8a7a6a, 0x6a7a8a, 0x8a6a6a, 0x7a8a6a]), roof: r.pick([0x5a3a2a, 0x3a4a5a, 0x4a4a3a]), sign: '#222' }));
+    }
+    if (pop >= 120 || bedCount() < nPeople * 2) this.commons = this.building({ id: 'habitat', kind: 'habitat', name: 'Rimway Commons', x: 0, z: 57, w: 28, d: 14, h: 3.4, door: 'n', style: 'concrete', color: 0xb4b0a4, awning: 0x3a5a6a, sign: '#12202a', fg: '#9ae0ff' });
+    this.beds = []; for (const h of [...this.homes, ...(this.commons ? [this.commons] : [])]) for (const b of h.beds) this.beds.push({ rec: h, bed: b });
     dressTown(this, r);
     for (let a = 0; a < 10; a++) { const x = Math.cos(a * 0.628) * 19, z = Math.sin(a * 0.628) * 19; const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 4.4, 6), std(0x2a2e34, { metalness: .5 })); p.position.set(x, 2.2, z); p.castShadow = true; this.root.add(p); const arm = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.06), std(0x2a2e34)); arm.position.set(x + 0.4, 4.4, z); this.root.add(arm); const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffe9a8 })); bulb.position.set(x + 0.8, 4.3, z); this.root.add(bulb); this.bulbs.push(bulb); if (a % 2 === 0) { const pl = new THREE.PointLight(0xffd9a0, 0, 22, 1.5); pl.position.set(x + 0.8, 4.1, z); this.root.add(pl); this.lamps.push(pl); } }
     const gs = this.B.gunsmith; this.addBench(gs.back.x - 3, gs.back.z, 'Gunsmith Workbench', 'bench'); this.addBench(gs.back.x + 3, gs.back.z, 'Research Terminal', 'tech', true);
@@ -165,9 +180,17 @@ export class Surface {
       const prof = makePerson(seedBase * 7 + i * 31, this.planet, this.sys); if (i === 4) { prof.cop = true; prof.job = 'cop'; prof.jobLabel = 'Patrol Officer'; prof.outfit = JSON.parse(JSON.stringify(OUTFITS.police)); }
       const npc = this.spawnNPC(prof);
       if (i < 5) { npc.station = this.B[roles[i]]; npc.home = { x: npc.station.back.x + (i % 2 ? 1.2 : -1.2), z: npc.station.back.z }; } else npc.wander = true;
+      if (npc.wander) npc.bed = this.pickBed(i - 5);
       const hp = npc.home || this.randPlaza(r); npc.pos.set(hp.x, this.heightAt(hp.x, hp.z), hp.z); npc.mesh.position.copy(npc.pos);
     }
   }
+  // round-robin over all residences so neighbours are spread out; one resident per bed record
+  pickBed(k) {
+    const used = this._bedUsed || (this._bedUsed = new Set()); const groups = [...this.homes, ...(this.commons ? [this.commons] : [])];
+    for (let t = 0; t < groups.length; t++) { const g = groups[(k + t) % groups.length]; const b = g.beds.find(x => !used.has(x)); if (b) { used.add(b); return { rec: g, bed: b }; } }
+    return null;
+  }
+  bedPath(slot) { const { rec, bed } = slot; return [{ x: rec.door.x, z: rec.door.z }, ...rec.route(bed).map(p => ({ x: p.x, z: p.z })), { x: bed.x, z: bed.z }]; }
   counter(b, label) {
     const horiz = b.dv[1] !== 0; const m = new THREE.Mesh(new THREE.BoxGeometry(horiz ? 4.2 : 0.9, 1.05, horiz ? 0.9 : 4.2), std(0x6a4a2e, { roughness: .7 })); m.position.set(b.back.x + b.dv[0] * 2.6, 0.55, b.back.z + b.dv[1] * 2.6); m.castShadow = true; m.receiveShadow = true; this.root.add(m);
     const top = new THREE.Mesh(new THREE.BoxGeometry(horiz ? 4.4 : 1.1, 0.06, horiz ? 1.1 : 4.4), std(0x2a2018, { roughness: .4 })); top.position.set(m.position.x, 1.08, m.position.z); this.root.add(top);
@@ -226,6 +249,7 @@ export class Surface {
     this.hemi.intensity = 0.3 + 1.7 * L * (air ? 1 : 0.55); this.hemi.color.copy(air ? u.uSky.value.clone().lerp(new THREE.Color(0xffffff), 0.4) : new THREE.Color(0x778899));
     this.sun.intensity = 2.8 * Math.min(1, L * 1.3) + 0.05; this.sun.color.set(L < 0.45 ? 0xffb070 : 0xfff3df);
     const wl = (1 - L) * 1.1 + 0.05; for (const m of this.windowMats) m.emissiveIntensity = wl;
+    if (this.innerGlass) { const c = this.innerGlass.color; c.setRGB(0.04 + 0.42 * L, 0.06 + 0.58 * L, 0.1 + 0.8 * L); if (air && L < 0.5 && L > 0.05) c.lerp(new THREE.Color(0xff9a60), 0.25); }
     for (const l of this.lamps) l.intensity = (1 - L) * 30;
     const blink = Math.floor(G.time * 1.5) % 2 === 0; for (const b of this.blinkers) b.visible = blink;
     for (const l of this.padLights || []) l.m.visible = ((Math.floor(G.time * 5) + l.i) % 5) < 4;
@@ -242,11 +266,32 @@ export class Surface {
     if (this.alt < 400) this.scatter.update(cam.position.x, cam.position.z, this.avoidFn);
     this.scatter.setVisible(this.alt < 500);
     if (this.water) { this.water.position.x = cam.position.x; this.water.position.z = cam.position.z; }
-    this.updateNodes(p.x, p.z);
+    this.updateNodes(p.x, p.z); this.updateRoomLights(p);
     for (const n of this.npcs) this.updateNPC(n, dt, player);
     for (const nd of this.nodes) if (!nd.alive) { nd.t = (nd.t || 0) + dt; if (nd.t > 240) { nd.alive = true; nd.m.visible = true; nd.t = 0; nd.hp = 1; } }
   }
 
+  updateRoomLights(p) {
+    const pool = this.lampPool; if (!pool || !pool.length) return;
+    const best = []; for (const l of this.roomLamps) { const d = (l.x - p.x) ** 2 + (l.z - p.z) ** 2; if (d > 900) continue; let k = best.length; while (k > 0 && best[k - 1].d > d) k--; if (k < pool.length) { best.splice(k, 0, { d, l }); if (best.length > pool.length) best.pop(); } }
+    const want = new Set(best.map(b => b.l)), used = new Set(), T = 16;
+    for (const lamp of pool) { const rec = lamp.userData.rec; if (rec && want.has(rec)) { used.add(rec); lamp.intensity += (T - lamp.intensity) * 0.2; } else { lamp.intensity *= 0.75; if (lamp.intensity < 0.3) { lamp.intensity = 0; lamp.userData.rec = null; } } }
+    for (const b of best) if (!used.has(b.l)) { const lamp = pool.find(x => !x.userData.rec); if (!lamp) break; lamp.userData.rec = b.l; lamp.position.set(b.l.x, b.l.y, b.l.z); lamp.color.set(b.l.col); lamp.intensity = 0; used.add(b.l); }
+  }
+  // residents walk home at night (door -> hall -> bedroom -> bed) and back out in the morning
+  routeStep(n, dt) {
+    const night = this.dayLevel < 0.14; let rt = n.route;
+    if (!rt) { if (!night) return -1; rt = n.route = { path: this.bedPath(n.bed), i: 0, dir: 1 }; n.target = null; }
+    if (!night && rt.dir === 1) { rt.dir = -1; n.asleep = false; }
+    const p = n.pos, t = rt.path[rt.i]; if (n.asleep) return 0;
+    const dx = t.x - p.x, dz = t.z - p.z, d = Math.hypot(dx, dz);
+    if (d < 0.45) {
+      if (rt.dir === 1) { if (rt.i >= rt.path.length - 1) { n.asleep = true; return 0; } rt.i++; }
+      else { if (rt.i <= 0) { n.route = null; n.wait = 2 + Math.random() * 5; return -1; } rt.i--; }
+      return 0;
+    }
+    const sp = 1.7; p.x += dx / d * sp * dt; p.z += dz / d * sp * dt; this.face(n, dx, dz); return sp;
+  }
   updateNPC(n, dt, player) {
     n.t += dt; const p = n.pos; let sp = 0;
     if (n.ko && !n.dead) { n.koT -= dt; if (n.koT <= 0) { n.ko = false; n.fleeFrom = { x: player.pos.x, z: player.pos.z }; n.fleeT = 0; } }
@@ -259,14 +304,16 @@ export class Surface {
     } else if (n.customer) {
       const c = n.customer; const tg = c.path[c.i]; if (tg) { const dx = tg.x - p.x, dz = tg.z - p.z, d = Math.hypot(dx, dz); if (d < 0.6) { c.i++; if (c.i >= c.path.length) { c.done && c.done(n); } } else { p.x += dx / d * 1.8 * dt; p.z += dz / d * 1.8 * dt; sp = 1.8; this.face(n, dx, dz); } }
     } else if (n.talking) { this.face(n, player.pos.x - p.x, player.pos.z - p.z); }
+    else if (n.bed && (n.route || this.dayLevel < 0.14) && (n._rs = this.routeStep(n, dt)) >= 0) { sp = n._rs; }
     else if (n.station && !n.wander) { if (n.home) { const dx = n.home.x - p.x, dz = n.home.z - p.z, d = Math.hypot(dx, dz); if (d > 0.4) { p.x += dx / d * 1.5 * dt; p.z += dz / d * 1.5 * dt; sp = 1.5; this.face(n, dx, dz); } else this.face(n, -n.station.dv[0], -n.station.dv[1]); } }
     else if (n.wander) {
       n.wait -= dt;
       if (!n.target && n.wait <= 0) { const a = Math.random() * 6.283, d = 6 + Math.random() * (n.lone ? 12 : 26); n.target = n.lone ? { x: this.padPos.x + 25 + Math.cos(a) * d, z: this.padPos.z + 12 + Math.sin(a) * d } : { x: Math.cos(a) * d, z: Math.sin(a) * d }; }
       if (n.target) { const dx = n.target.x - p.x, dz = n.target.z - p.z, d = Math.hypot(dx, dz); if (d < 0.8) { n.target = null; n.wait = 2 + Math.random() * 6; } else { p.x += dx / d * 1.35 * dt; p.z += dz / d * 1.35 * dt; sp = 1.35; this.face(n, dx, dz); } }
     }
-    this.collide(p, 0.35, 0); p.y = this.heightAt(p.x, p.z); n.mesh.position.copy(p);
+    if (!n.route) this.collide(p, 0.35, 0); p.y = this.heightAt(p.x, p.z); n.mesh.position.copy(p);
     n.gait += sp * dt * 2.9;
+    if (n.asleep && !n.talking) { animateHuman(n.mesh, { ko: true, speed: 0 }); n.mesh.position.y += 0.5; n.moving = false; return; }
     animateHuman(n.mesh, { phase: n.gait, speed: sp / 1.7, idleT: n.t, arms: 'relaxed' });
     n.moving = sp > 0.1;
   }
