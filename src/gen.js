@@ -1,6 +1,7 @@
 // Procedural systems, planets and people
 import { rng, hashStr } from './util.js';
 import { PLANET_KINDS, SHAPES, SYL, FIRST, LAST, JOBS } from './data.js';
+import { makeLook, outfitFor } from './people.js';
 
 export function makeName(r, parts = 3) {
   let s = ''; const n = r.int(2, parts); for (let i = 0; i < n; i++) s += r.pick(SYL);
@@ -56,7 +57,7 @@ export function makePerson(seed, planet, sys) {
   const trait = r.pick(['dry', 'warm', 'nervous', 'proud', 'sly', 'tired']);
   return {
     seed, name: r.pick(FIRST) + ' ' + r.pick(LAST), job: jobKey, jobLabel: job.label, smarts, interest, trait,
-    originName: origin.name, originSys: originSys.name, mood: r.range(0.3, 0.8), met: false, id: 'n' + seed,
-    look: { skin: r.pick([0xf0c8a0, 0xd8a070, 0xa8744a, 0x7a4a2c, 0x5a3320, 0xe8b890]), shirt: r.pick([0x8c3a3a, 0x3a5c8c, 0x4a7a4a, 0x8a7a3a, 0x5a4a7a, 0x3a3a3a, 0xb06a30]), height: r.range(0.94, 1.06) },
+    outfit: outfitFor(jobKey, seed), originName: origin.name, originSys: originSys.name, mood: r.range(0.3, 0.8), met: false, id: 'n' + seed,
+    look: makeLook(seed),
   };
 }

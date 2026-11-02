@@ -140,6 +140,7 @@ export class UI {
     document.body.classList.add('modal');
   }
   closeAll() {
+    if (this.modal === 'packwait') { clearTimeout(this.packTimer); this.hooks.packOpen(false); this.modal = null; document.body.classList.remove('modal'); this.hooks.onClose && this.hooks.onClose(); return; }
     if (!this.modal && this.panel.classList.contains('hidden')) return; this.lp = null; this.lpFail = 0; const wasPack = this.modal === 'pack';
     const fin = () => { this.modal = null; this.panel.className = 'panel hidden'; this.panel.innerHTML = ''; document.body.classList.remove('modal'); this.hooks.onClose && this.hooks.onClose(); };
     if (wasPack) { const b = $('.bag', this.panel); b && b.classList.remove('open', 'in'); this.hooks.packOpen(false); this.modal = 'closing'; setTimeout(fin, 380); } else fin();
@@ -159,8 +160,12 @@ export class UI {
 
   // ---------- backpack ----------
   openPack() {
-    this.hooks.packOpen(true); this.packFace = 'front'; this.sel = null; this.open('pack', '', 'packwrap'); this.panel.style.setProperty('--bs', clamp((innerHeight - 220) / 470, 0.5, 1)); this.renderPack(true);
-    requestAnimationFrame(() => { const b = $('.bag', this.panel); if (!b) return; b.classList.add('in'); setTimeout(() => b.classList.add('open'), 520); });
+    // the pack comes off your shoulder and is set on the floor in front of you; the UI opens once it's down
+    this.hooks.packOpen(true); this.packFace = 'front'; this.sel = null; this.modal = 'packwait'; document.exitPointerLock?.(); document.body.classList.add('modal'); sfx('zip', 0.7);
+    this.packTimer = setTimeout(() => {
+      if (this.modal !== 'packwait') return; this.open('pack', '', 'packwrap'); this.panel.style.setProperty('--bs', clamp((innerHeight - 250) / 470, 0.5, 1)); this.renderPack(true);
+      requestAnimationFrame(() => { const b = $('.bag', this.panel); if (!b) return; b.classList.add('in'); setTimeout(() => b.classList.add('open'), 380); });
+    }, 950);
   }
   renderPack(first) {
     const P = G.pack; const n = PACK_SLOTS[P.tier];
@@ -400,9 +405,9 @@ export class UI {
     const ring = $('.ring', this.panel), zone = $('.zone', this.panel), pin = $('.pin', this.panel); let a = 0, dir = 1, got = 0, zc = Math.random() * 360; const zw = 34 + level * 4; const speed = 200 + got * 40;
     const setZone = () => { zone.style.transform = `rotate(${zc - zw / 2}deg)`; zone.style.setProperty('--w', zw + 'deg'); };
     setZone(); this.lp = { cb, tick: (dt) => { a = (a + dir * (speed + got * 70) * dt + 360) % 360; pin.style.transform = `rotate(${a}deg)`; }, hit: () => {
-      let d = Math.abs(((a - zc + 540) % 360) - 180); d = 180 - d; if (d < zw / 2) { got++; sfx('good'); $('#lpn', this.panel).textContent = got; zc = Math.random() * 360; dir = Math.random() < 0.5 ? 1 : -1; setZone(); if (got >= 3) { this.lp = null; this.closeAll(); cb(true); } } else { sfx('warn'); got = Math.max(0, got - 1); $('#lpn', this.panel).textContent = got; this.lpFail = (this.lpFail || 0) + 1; if (this.lpFail >= 3) { this.lpFail = 0; this.lp = null; this.closeAll(); cb(false); } }
+      const d = Math.abs(((a - zc + 540) % 360) - 180); if (d < zw / 2) { got++; sfx('good'); $('#lpn', this.panel).textContent = got; zc = Math.random() * 360; dir = Math.random() < 0.5 ? 1 : -1; setZone(); if (got >= 3) { this.lp = null; this.closeAll(); cb(true); } } else { sfx('warn'); got = Math.max(0, got - 1); $('#lpn', this.panel).textContent = got; this.lpFail = (this.lpFail || 0) + 1; if (this.lpFail >= 3) { this.lpFail = 0; this.lp = null; this.closeAll(); cb(false); } }
     } };
-    this.panel.addEventListener('click', (e) => { if (e.target.closest('.ring') && this.lp) this.lp.hit(); });
+    this.panel.onclick = (e) => { if (e.target.closest('.ring') && this.lp) this.lp.hit(); };
   }
   updateLock(dt) { if (this.lp) { this.lp.tick(dt); if (In.pressed.interact) this.lp.hit(); } }
 

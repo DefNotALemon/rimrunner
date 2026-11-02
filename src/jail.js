@@ -1,7 +1,7 @@
 // Holding facility: serve your time, or pick the lock, grab your gear and slip past the guards
 import * as THREE from '../vendor/three.module.js';
 import { Surface } from './surface.js';
-import { buildPerson } from './models.js';
+import { makeLook, OUTFITS, animateHuman } from './people.js';
 import { G } from './state.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -13,7 +13,7 @@ export class Jail extends Surface {
   enter(info, sys, planet) {
     this.info = info; this.sys = sys; this.planet = { ...planet, settled: false, kind: 'barren', temp: 0.5, air: 1, g: 1, i: planet.i }; this.kind = 'barren';
     this.K = { res: [], sky: 0 }; this.air = 1; this.gravity = 1; this.root.clear(); this.colliders = []; this.interactables = []; this.npcs = []; this.nodes = []; this.pickups = []; this.buildings = [];
-    this.scene.fog = new THREE.Fog(0x050608, 5, 70); this.sun.intensity = 0; this.hemi.intensity = 0.55; this.hemi.color.set(0x8a95a8); this.hemi.groundColor.set(0x303338);
+    this.scene.remove(this.sky.mesh); this.scene.fog = new THREE.Fog(0x050608, 5, 70); this.sun.intensity = 0; this.hemi.intensity = 0.55; this.hemi.color.set(0x8a95a8); this.hemi.groundColor.set(0x303338);
     this.padPos = V(1000, 0, 1000); this.flatR = 9999; this.lamps = [];
     const concrete = std(0x6e7279), dark = std(0x2b2e33), floorM = std(0x45484d);
     const box = (x0, x1, z0, z1, h, mat, y0 = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, h, z1 - z0), mat); m.position.set((x0 + x1) / 2, y0 + h / 2, (z0 + z1) / 2); m.castShadow = false; m.receiveShadow = true; this.root.add(m); return m; };
@@ -52,7 +52,7 @@ export class Jail extends Surface {
     this.timeLeft = info.sentence; this.caught = 0; this.cellOpen = false;
   }
   addGuard(x, z, path) {
-    const prof = { look: { skin: 0xa8744a, shirt: 0x1c2638, height: 1.05 }, cop: true, id: 'g' + Math.random(), name: 'Guard', smarts: 0.2, interest: {}, mood: 0.5, job: 'cop', jobLabel: 'Guard' };
+    const look = makeLook(Math.floor(Math.random() * 1e6)); look.female = false; const prof = { look, cop: true, id: 'g' + Math.random(), name: 'Guard', smarts: 0.2, interest: {}, mood: 0.5, job: 'guard', jobLabel: 'Guard', outfit: JSON.parse(JSON.stringify(OUTFITS.guard)) };
     const n = this.spawnNPC(prof); n.guard = true; n.path = path; n.pi = 0; n.pos.set(x, 0, z); n.mesh.position.copy(n.pos); n.wander = false; n.alert = 0; return n;
   }
   openCell() { this.cellOpen = true; this.colliders = this.colliders.filter(c => c !== this.doorCol); this.doorMesh.visible = false; this.interactables = this.interactables.filter(i => i.act !== 'celldoor'); }
@@ -60,6 +60,7 @@ export class Jail extends Surface {
     this.timeLeft -= dt; if (this.timeLeft <= 0 && !this.released) { this.released = true; hooks.release(); return; }
     for (const l of this.lamps) l.intensity = 8 + Math.sin(G.time * 17 + l.position.x) * (Math.random() < 0.02 ? 6 : 0.3);
     for (const g of this.guards) {
+      if (g.ko) { animateHuman(g.mesh, { ko: true }); g.mesh.position.y = 0.12; g.alert = 0; continue; }
       const p = g.pos; let sp = 0;
       if (g.alert > 0.99) {   // chase
         const dx = player.pos.x - p.x, dz = player.pos.z - p.z, d = Math.hypot(dx, dz); if (d > 1.2) { p.x += dx / d * 4.6 * dt; p.z += dz / d * 4.6 * dt; sp = 4.6; this.face(g, dx, dz); } else if (!this.busted) { this.busted = true; hooks.busted(); }
@@ -71,12 +72,13 @@ export class Jail extends Surface {
       const fwd = V(-Math.sin(g.mesh.rotation.y), 0, -Math.cos(g.mesh.rotation.y));
       const ang = dist > 0.1 ? fwd.dot(to.clone().normalize()) : 1;
       const inCell = player.pos.x < -4.2;
-      const range = (player.crouch ? 4.5 : 9) * (player.sprinting ? 1.5 : 1);
+      const disguised = G.outfit && G.outfit.tags && G.outfit.tags.includes('police'); const range = (player.crouch ? 4.5 : 9) * (player.sprinting ? 1.5 : 1) * (disguised ? 0.22 : 1);
       if (!inCell && dist < range && ang > 0.35) { g.alert = Math.min(1, g.alert + dt * (1.6 + (range - dist) * 0.15)); } else g.alert = Math.max(0, g.alert - dt * 0.35);
       if (g.alert > 0.99 && !g.shouted) { g.shouted = true; ui.bubble(g, '"HEY! Prisoner out of her cell!"'); }
       if (g.alert < 0.3) g.shouted = false;
       this.collide(p, 0.35, 0); g.mesh.position.set(p.x, 0, p.z);
-      g.gait = (g.gait || 0) + sp * dt * 2.2; const sw = Math.sin(g.gait) * Math.min(1, sp) * 0.7; const u = g.mesh.userData; u.legL.rotation.x = sw; u.legR.rotation.x = -sw; u.armL.rotation.x = -sw * 0.8; u.armR.rotation.x = sw * 0.8;
+      if (g.ko) { animateHuman(g.mesh, { ko: true }); continue; }
+      g.gait = (g.gait || 0) + sp * dt * 2.9; animateHuman(g.mesh, { phase: g.gait, speed: sp / 1.7, idleT: g.t || 0, arms: 'relaxed' }); g.t = (g.t || 0) + dt;
     }
     this.maxAlert = Math.max(0, ...this.guards.map(g => g.alert));
   }

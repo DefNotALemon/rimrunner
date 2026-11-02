@@ -195,7 +195,7 @@ function frame(now) {
   if (started) {
     if (P.back) { if (ui.modal && ui.modal !== 'closing') ui.closeAll(); }
     if (!ui.hail_ && mode !== 'title') {
-      if (P.pack && (mode === 'foot' || mode === 'jail')) { if (ui.modal === 'pack') ui.closeAll(); else if (!ui.modal) ui.openPack(); }
+      if (P.pack && (mode === 'foot' || mode === 'jail')) { if (ui.modal === 'pack' || ui.modal === 'packwait') ui.closeAll(); else if (!ui.modal) ui.openPack(); }
       if (P.pack && mode === 'space' && !ui.modal) ui.openLockers(); else if (P.pack && mode === 'space' && ui.modal === 'lockers') ui.closeAll();
       if (P.journal) { if (ui.modal === 'journal') ui.closeAll(); else if (!ui.modal) ui.openJournal(); }
       if (P.map && mode === 'space') { if (ui.modal === 'map') ui.closeAll(); else if (!ui.modal) ui.openMap(space, !space.inLane); }

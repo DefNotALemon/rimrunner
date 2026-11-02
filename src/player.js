@@ -4,7 +4,8 @@ import { clamp, damp, lerp } from './util.js';
 import { In } from './input.js';
 import { G, toast, quickPull, stowHand, removeItem, count, lvl, xp, addItem, canAdd } from './state.js';
 import { ITEMS, GUN } from './data.js';
-import { buildPerson, buildBackpackMesh, gunMesh } from './models.js';
+import { buildBackpackMesh, gunMesh } from './models.js';
+import { buildHuman, animateHuman, setOutfit, OUTFITS, makeLook, GUN_ATTACH } from './people.js';
 import { sfx } from './audio.js';
 
 // Space Ranger constants (Walk.cs / Character.Stance.cs)
@@ -19,13 +20,15 @@ export class Player {
     this.lean = 0; this.leanDir = V(); this.leanKind = ''; this.idleT = 0; this.idleCam = 0; this.thirdPerson = false; this.orbit = 0;
     this.aim = 0; this.focus = 0; this.focusTarget = null; this.fov = 75; this.recoil = 0; this.fireCd = 0; this.reloadT = 0; this.pitchOff = 0; this.packOpen = false; this.sway = V(); this.lastGun = null;
     this.mineT = 0; this.mineNode = null; this.stepAcc = 0; this.holsterT = 0; this.exposure = 0; this.dead = false; this.hurtT = 0; this.muzzle = 0; this.stand = 0;
-    this.body = buildPerson({ skin: 0xd8a070, shirt: 0x3a5c8c, height: 1 }, { pants: 0x2a2f3a, hair: 0x201610 });
-    this.body.traverse(o => { if (o.isMesh) o.castShadow = true; });
-    this.pack3 = buildBackpackMesh(); this.pack3.position.set(0, 1.2, 0.2); this.body.add(this.pack3);
+    if (!G.outfit) G.outfit = JSON.parse(JSON.stringify(OUTFITS.ranger));
+    this.look = makeLook(4242); this.look.female = false;
+    this.body = buildHuman(this.look, G.outfit);
+    this.pack3 = buildBackpackMesh(); this.pack3.position.set(0, 0.3, 0.19); this.pack3.scale.setScalar(1.35); this.body.userData.J.spine.add(this.pack3);
+    this.packMesh = buildBackpackMesh(); this.packMesh.scale.setScalar(1.7); this.packMesh.visible = false; this.packT = 0; this.gunUp = 0; this.gunUpT = 0;
     this.view = new THREE.Group(); this.cam.add(this.view);
-    this.skin = new THREE.MeshStandardMaterial({ color: 0xd8a070, roughness: 0.8 }); this.sleeve = new THREE.MeshStandardMaterial({ color: 0x3a5c8c, roughness: 0.9 });
-    const mkArm = x => { const a = new THREE.Group(); const s = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.085, 0.42), this.sleeve); s.position.z = 0.05; const h = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.13), this.skin); h.position.z = -0.2; a.add(s, h); a.position.set(x, -0.3, -0.35); this.view.add(a); return a; };
-    this.armL = mkArm(-0.2); this.armR = mkArm(0.2);
+    this.skin = new THREE.MeshStandardMaterial({ color: this.look.skin, roughness: 0.6 }); this.sleeve = new THREE.MeshStandardMaterial({ color: 0x3a5c3a, roughness: 0.92 });
+    const mkArm = () => { const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.029, 1, 10), this.sleeve); fore.geometry.translate(0, 0.5, 0); const hand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.1), this.skin); const fing = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.03, 0.05), this.skin); fing.position.set(0, -0.005, -0.07); hand.add(fing); this.view.add(fore, hand); return { fore, hand }; };
+    this.armL = mkArm(); this.armR = mkArm(); this.applyOutfitColors();
     this.gunHolder = new THREE.Group(); this.view.add(this.gunHolder);
     this.flash = new THREE.PointLight(0xffc880, 0, 12, 2); this.view.add(this.flash); this.flash.position.set(0.2, -0.1, -1);
     this.beam = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1, 6), new THREE.MeshBasicMaterial({ color: 0x66f0ff })); this.beam.visible = false;
@@ -36,7 +39,7 @@ export class Player {
   }
 
   place(scene, surf) {
-    this.surf = surf; scene.add(this.body); scene.add(this.beam); scene.add(this.mark); this.scene = scene; scene.add(this.cam);
+    this.surf = surf; scene.add(this.body); scene.add(this.packMesh); scene.add(this.beam); scene.add(this.mark); this.scene = scene; scene.add(this.cam);
     this.cam.position.set(0, 0, 0);
   }
   teleport(x, z, yaw = 0) {
@@ -55,6 +58,7 @@ export class Player {
   update(dt, ctx) {
     // ctx: {active, npcs, focusable, surf, ui}
     const { active, surf } = ctx; const hasInput = active && !this.dead && !this.packOpen;
+    this.packT = THREE_move(this.packT, this.packOpen ? 1 : 0, dt / 0.85);
     const look = In.take();
     const mv = hasInput ? In.move : { x: 0, y: 0 };
     const grav = GRAV * surf.gravity;
@@ -173,7 +177,7 @@ export class Player {
   }
 
   shoot(g, spec, ctx) {
-    this.fireCd = spec.rate; g.mag--; this.recoil = Math.min(1.6, this.recoil + 0.5 + spec.pellets * 0.04); this.pitch += 0.012 * (1 + spec.pellets * 0.08) * (1 - this.aim * 0.4); this.yaw += (Math.random() - 0.5) * 0.004; this.muzzle = 1;
+    this.fireCd = spec.rate; g.mag--; this.gunUpT = 2.5; this.recoil = Math.min(1.6, this.recoil + 0.5 + spec.pellets * 0.04); this.pitch += 0.012 * (1 + spec.pellets * 0.08) * (1 - this.aim * 0.4); this.yaw += (Math.random() - 0.5) * 0.004; this.muzzle = 1;
     sfx(spec.pellets > 4 ? 'shotgun' : g.id === 'rifle' ? 'rifle' : g.id === 'arc' ? 'laser' : 'shot', 1);
     const origin = V(this.pos.x, this.pos.y + EYE - 0.05, this.pos.z);
     const dmgMul = (g.q || 1) * (1 + 0.04 * lvl('gunsmith'));
@@ -274,7 +278,7 @@ export class Player {
       eye -= 0.04 * L;
     }
     // packOpen: dip the view toward the bag
-    this.pitchOff = damp(this.pitchOff, this.packOpen ? -0.55 : 0, 5, dt);
+    this.pitchOff = -this.packT * 0.95; eye -= this.packT * 0.62;
     const fovBase = 75; const wantFov = fovBase - this.aim * 22 - this.focus * 18 + (this.sprinting ? 5 : 0); this.fov = damp(this.fov, wantFov, 10, dt);
     const forward = V(0, 0, -1).applyAxisAngle(V(0, 1, 0), this.yaw);
     const e = V(this.pos.x, this.pos.y + eye, this.pos.z).addScaledVector(forward, 0.1 + (this.crouchBlend * 0.04)).add(V(Math.cos(this.yaw) * side + ox, 0, -Math.sin(this.yaw) * side + oz));
@@ -306,48 +310,66 @@ export class Player {
   updateViewmodel(dt, speed, p) {
     const g = G.hand; const id = g ? g.id : null;
     if (id !== this.holdId) { this.gunHolder.clear(); this.holdId = id; if (id) { const m = gunMesh(id); this.gunHolder.add(m); this.gunMesh = m; } else this.gunMesh = null; this.drawT = 0; }
-    this.view.visible = this.tp < 0.3;
+    this.view.visible = this.tp < 0.3 && this.packT < 0.3;
+    this.gunUpT = Math.max(0, this.gunUpT - dt);
+    const wantUp = (this.aim > 0.2 || this.gunUpT > 0 || this.reloading) ? 1 : 0; this.gunUp = damp(this.gunUp, wantUp, 7, dt);
     const bob = Math.min(1, this.bobAmt) * (1 - this.aim * 0.7);
-    const sx = this.sway.x, sy = this.sway.y, kick = this.recoil * 0.06;
-    const rl = this.reloading ? Math.sin((1 - this.reloadT) * Math.PI) : 0;
+    const sx = this.sway.x, sy = this.sway.y, kick = this.recoil * 0.06; const rl = this.reloading ? Math.sin((1 - this.reloadT) * Math.PI) : 0;
     this.drawT = Math.min(1, (this.drawT || 0) + 0.06);
+    const bobY = -Math.abs(Math.cos(p)) * 0.012 * bob, bobX = Math.sin(p) * 0.008 * bob;
+    const aR = new THREE.Vector3(0.26, -0.5, 0.12), aL = new THREE.Vector3(-0.26, -0.5, 0.12);   // elbow anchors (below and behind the lens)
+    let hR, hL;
     if (g) {
-      const hip = V(0.2, -0.2, -0.4), ads = V(0, -0.115, -0.32); const pos = hip.lerp(ads, this.aim);
-      this.gunHolder.position.set(pos.x + sx + Math.sin(p) * 0.006 * bob, pos.y + sy - Math.abs(Math.cos(p)) * 0.01 * bob - rl * 0.12 - (1 - this.drawT) * 0.3, pos.z + kick);
-      this.gunHolder.rotation.set(-this.recoil * 0.05 + rl * 0.5, -sx * 0.6 + (1 - this.aim) * 0.06, sx * 0.3);
-      this.armR.position.set(0.12 + (1 - this.aim) * 0.07, -0.2 - this.aim * 0.02, -0.34); this.armR.rotation.set(0.1, 0.1, 0); this.armL.position.set(-0.04, -0.2, -0.4); this.armL.rotation.set(0, -0.2, 0);
-      this.armR.visible = this.armL.visible = true;
+      const lowP = new THREE.Vector3(0.27, -0.5, -0.22), hipP = new THREE.Vector3(0.2, -0.2, -0.4), adsP = new THREE.Vector3(0, -0.115, -0.32);
+      const pos = lowP.clone().lerp(hipP, this.gunUp).lerp(adsP, this.aim); const rotX = -1.15 * (1 - this.gunUp) - this.recoil * 0.05 + rl * 0.5;
+      this.gunHolder.position.set(pos.x + sx + bobX, pos.y + sy + bobY - rl * 0.12 - (1 - this.drawT) * 0.3, pos.z + kick);
+      this.gunHolder.rotation.set(rotX, -sx * 0.6 + (1 - this.aim) * 0.06 * this.gunUp, sx * 0.3);
+      this.gunHolder.updateMatrix();
+      const grips = { pistol: [[0, -0.07, -0.01], [0.012, -0.075, -0.035]], coach: [[0, -0.075, 0.0], [0, -0.035, -0.2]], rifle: [[0, -0.065, 0.0], [0, -0.045, -0.34]], breacher: [[0, -0.065, 0.0], [0, -0.05, -0.26]], arc: [[0, -0.085, 0.0], [0, -0.04, -0.3]] }[id];
+      const gv = (v) => new THREE.Vector3(...v).applyMatrix4(this.gunHolder.matrix);
+      hR = gv(grips[0]); const twoHand = this.gunUp > 0.4 || id !== 'pistol'; hL = twoHand ? gv(grips[1]) : new THREE.Vector3(-0.27, -0.58, -0.12);
+      if (!twoHand) hL.lerp(gv(grips[1]), this.gunUp);
     } else {
-      this.armL.position.set(-0.24 + sx, -0.34 + sy - Math.abs(Math.cos(p)) * 0.01 * bob, -0.35); this.armR.position.set(0.24 + sx, -0.34 + sy - Math.abs(Math.cos(p + 1.6)) * 0.01 * bob, -0.35);
-      this.armL.rotation.set(-0.1, 0.1, 0); this.armR.rotation.set(this.beam.visible ? -0.5 : -0.1, -0.1, 0);
-      if (this.beam.visible) this.armR.position.set(0.2, -0.22, -0.4);
+      this.gunHolder.position.set(0, -2, 0);
+      hL = new THREE.Vector3(-0.27 + sx, -0.62 + sy + bobY, -0.1); hR = new THREE.Vector3(0.27 + sx, -0.62 + sy - bobY, -0.1);
+      if (this.beam.visible) hR = new THREE.Vector3(0.2, -0.26, -0.42);
+      hL.z += Math.sin(p) * 0.02 * bob; hR.z -= Math.sin(p) * 0.02 * bob;
     }
+    const place = (arm, a, h, left) => {
+      const d = h.clone().sub(a); const len = d.length(); arm.fore.position.copy(a); arm.fore.scale.set(1, len, 1); arm.fore.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+      arm.hand.position.copy(h); arm.hand.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), d.clone().setY(d.y * 0.6).normalize()); arm.hand.rotation.z += left ? -0.2 : 0.2;
+    };
+    place(this.armR, aR, hR, false); place(this.armL, aL, hL, true);
   }
 
   updateBody(dt, speed) {
-    const b = this.body; b.position.copy(this.pos); b.rotation.y = this.bodyYaw;   // person mesh front is -z, like the camera
-    const showFull = this.tp > 0.3; const u = b.userData;
-    u.head.visible = showFull; b.children.forEach(c => { if (c.geometry && c.geometry.type === 'SphereGeometry' && c !== u.head && c.position.y > 1.6) c.visible = showFull; });
-    // crouch: lower the body
-    const cb = this.crouchBlend; u.torso.position.y = 1.15 - cb * 0.3; u.head.position.y = 1.62 - cb * 0.34 + Math.sin(G.time * 1.6) * 0.004; u.torso.rotation.x = cb * 0.35;
-    u.legL.rotation.x = u.legR.rotation.x = 0; u.legL.position.y = u.legR.position.y = 0.82 - cb * 0.2;
-    const sw = Math.sin(Math.PI * 2 * this.gait) * Math.min(1, speed / 3) * 0.8; u.legL.rotation.x = sw; u.legR.rotation.x = -sw; u.armL.rotation.x = -sw * 0.7; u.armR.rotation.x = sw * 0.7;
-    if (G.hand) { u.armR.rotation.x = -1.35 + this.pitch * 0.5; u.armL.rotation.x = -1.2 + this.pitch * 0.5; u.armL.rotation.z = 0.25; } else u.armL.rotation.z = 0;
-    // lean pose
-    b.rotation.z = 0; if (this.lean > 0.01) {
-      const L = this.lean; b.rotation.order = 'YXZ';
-      if (this.leanKind === 'right') { b.rotation.z = -0.18 * L; } else if (this.leanKind === 'left') { b.rotation.z = 0.18 * L; } else if (this.leanKind === 'back') { b.rotation.x = -0.14 * L; u.legR.rotation.x = -0.5 * L; } else b.rotation.x = 0.16 * L;
-      u.legL.rotation.z = 0.05 * L; u.legR.rotation.z = -0.1 * L; if (!G.hand) { u.armL.rotation.x = -0.9 * L; u.armR.rotation.x = -0.9 * L; u.armL.rotation.y = -0.6 * L; u.armR.rotation.y = 0.6 * L; }
-    } else { b.rotation.x = 0; u.armL.rotation.y = u.armR.rotation.y = 0; u.legL.rotation.z = u.legR.rotation.z = 0; }
-    // visible backpack: guns on the sides
-    this.syncPack3();
+    const b = this.body, J = b.userData.J; b.position.copy(this.pos); b.rotation.order = 'YXZ'; b.rotation.y = this.bodyYaw;
+    const full = this.tp > 0.3; J.head.visible = full; J.armL.visible = J.armR.visible = full;   // first person uses the viewmodel arms
+    const gun = G.hand; let arms = 'relaxed'; if (gun) arms = this.gunUp > 0.5 ? 'gun' : 'lowgun'; else if (this.leaning) arms = 'wallhands';
+    animateHuman(b, { phase: Math.PI * 2 * this.gait, speed: speed / 4.4, crouch: this.crouchBlend, arms, aim: this.gunUp, pitch: -this.pitch * 0.7, idleT: G.time, look: -this.pitch });
+    if (this.beam.visible && !gun) { J.armR.rotation.x = 1.3; J.elbowR.rotation.x = 0.3; }
+    b.rotation.z = 0; b.rotation.x = 0;
+    if (this.lean > 0.01) { const L = this.lean; if (this.leanKind === 'right') b.rotation.z = -0.16 * L; else if (this.leanKind === 'left') b.rotation.z = 0.16 * L; else if (this.leanKind === 'back') { J.spine.rotation.x += 0.1 * L; J.legR.rotation.x -= 0.5 * L; J.kneeR.rotation.x -= 0.6 * L; } else J.spine.rotation.x -= 0.2 * L; J.legR.rotation.z -= 0.08 * L; }
+    if (gun && this.bodyGunId !== gun.id) { if (this.bodyGunMesh) this.bodyGunMesh.parent && this.bodyGunMesh.parent.remove(this.bodyGunMesh); this.bodyGunMesh = GUN_ATTACH(gunMesh(gun.id)); J.handR.add(this.bodyGunMesh); this.bodyGunId = gun.id; }
+    else if (!gun && this.bodyGunMesh) { this.bodyGunMesh.parent && this.bodyGunMesh.parent.remove(this.bodyGunMesh); this.bodyGunMesh = null; this.bodyGunId = null; }
+    // the backpack: on the shoulder, or lowered to the floor in front of you
+    this.pack3.visible = this.packT < 0.04; this.syncPack3();
+    const pm = this.packMesh; pm.visible = this.packT > 0.02;
+    if (pm.visible) {
+      const t = this.packT, e = t * t * (3 - 2 * t); const f = new THREE.Vector3(-Math.sin(this.bodyYaw), 0, -Math.cos(this.bodyYaw)), rt = new THREE.Vector3(Math.cos(this.bodyYaw), 0, -Math.sin(this.bodyYaw));
+      const from = new THREE.Vector3(this.pos.x, this.pos.y + 1.2, this.pos.z).addScaledVector(f, -0.22); const gy = this.surf.heightAt(this.pos.x + f.x, this.pos.z + f.z);
+      const to = new THREE.Vector3(this.pos.x, Math.max(gy, this.pos.y) + 0.2, this.pos.z).addScaledVector(f, 0.95).addScaledVector(rt, 0.1);
+      pm.position.copy(from).lerp(to, e); pm.position.y += Math.sin(e * Math.PI) * 0.5; pm.rotation.set(-Math.PI / 2 * e, this.bodyYaw + (1 - e) * 0.0, 0, 'YXZ');
+    }
     for (let i = this.impacts.length - 1; i >= 0; i--) { const im = this.impacts[i]; im.t -= dt; im.m.material.opacity = im.t * 4; if (im.t <= 0) { this.scene.remove(im.m); this.impacts.splice(i, 1); } }
   }
+  applyOutfitColors() { const o = G.outfit; if (!o) return; this.sleeve.color.set(o.top ? o.top.color : this.look.skin); }
+  wear(outfit) { G.outfit = JSON.parse(JSON.stringify(outfit)); setOutfit(this.body, G.outfit); this.applyOutfitColors(); }
   syncPack3() {
     const sig = G.pack.sides.map(s => s ? s.id : '-').join(',') + G.pack.tier; if (sig === this._packSig) return; this._packSig = sig;
     const sides = this.pack3.userData.sides; sides.forEach(s => s.clear());
     G.pack.sides.forEach((g, i) => { if (!g) return; const m = gunMesh(g.id); m.rotation.set(Math.PI / 2 + 0.1, 0, 0); m.rotation.y = 0; m.scale.setScalar(0.9); m.position.y = -0.1; sides[i].add(m); });
-    this.pack3.scale.setScalar(1 + G.pack.tier * 0.1);
+    this.pack3.scale.setScalar(1.35 + G.pack.tier * 0.08);
   }
 }
 
