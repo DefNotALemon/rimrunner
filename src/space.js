@@ -88,7 +88,14 @@ export class Space {
     const m = new THREE.Matrix4().lookAt(V(), out.clone().negate(), V(0, 1, 0)); this.ship.quat.setFromRotationMatrix(m);
     this.ship.quat.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), Math.PI));   // face away from the planet
     this.ship.speed = 40; this.ship.throttle = 0.12; this.lastPlanet = pi; this.camera.position.copy(this.ship.pos).add(V(0, 8, 30));
-    this.disabled = false;
+    this.disabled = false; this.entering = false;
+  }
+  // coming back up out of an atmosphere: appear above the planet on the side we left from
+  reenter(sys, planetIndex, outDir) {
+    this.enter(sys, { planetIndex }); const po = this.planetObjs[planetIndex]; const H = clamp(po.collR * 0.35 + 600, 1500, 5000); const s = this.ship;
+    s.pos.copy(po.pos).addScaledVector(outDir, po.collR + H * 1.12);
+    s.quat.setFromRotationMatrix(new THREE.Matrix4().lookAt(V(), outDir.clone().negate(), V(0, 1, 0))); s.quat.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 1, 0), Math.PI));
+    s.speed = 180; s.throttle = 0.3; this.camera.position.copy(s.pos).add(V(0, 8, 30));
   }
 
   forward() { return V(0, 0, -1).applyQuaternion(this.ship.quat); }
@@ -141,8 +148,11 @@ export class Space {
       }
     }
     this.near = near; this.nearAlt = nd;
-    const canLand = !!near && nd < Math.max(900, near.collR * 0.9) && Math.abs(s.speed) < 300;
-    if (active && In.pressed.land && !this.disabled) { if (canLand) this.hooks.land(near.p); else toast(nd > 900 ? 'Too far to land. Get closer to a planet.' : 'Slow below 300 to land.', 'warn'); }
+    const atmoH = near ? clamp(near.collR * 0.35 + 600, 1500, 5000) : 0; this.atmoH = atmoH;
+    if (near && nd < atmoH * 1.8) s.speed = Math.min(s.speed, Math.max(300, nd * 0.45));   // atmosphere drag
+    const canLand = !!near && nd < atmoH * 1.8;
+    if (!this.entering && !this.disabled && near && (nd < atmoH * 0.6 || (active && In.pressed.land && nd < atmoH * 1.8))) { this.entering = true; this.hooks.land(near.p, s.pos.clone().sub(near.pos).normalize(), this.forward()); }
+    else if (active && In.pressed.land && !this.disabled && !this.entering) toast('Fly toward a planet to enter its atmosphere.', 'warn');
     const speed = Math.abs(s.speed); const limit = lane ? lane.limit : null;
     if (lane && speed > limit * 1.04) { this.law.maxSpeed = Math.max(this.law.maxSpeed, speed); this.addOffence('speeding', { limit, speed }, (speed / limit - 1) * 10 * dt); }
     G.heat = Math.max(0, G.heat - (this.law.state === 'none' || this.law.state === 'dispatched' ? 1.6 : 0.4) * dt);

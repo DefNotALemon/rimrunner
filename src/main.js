@@ -10,6 +10,7 @@ import { Player, onDeath } from './player.js';
 import { Social } from './social.js';
 import { UI } from './ui.js';
 import { PackWorld } from './packworld.js';
+import { Atmo } from './atmo.js';
 import { audioInit, sfx } from './audio.js';
 import { ITEMS } from './data.js';
 import { fmt, clamp } from './util.js';
@@ -43,9 +44,14 @@ const pack = new PackWorld(camera, { dropItem: (h, pos) => surf.dropItem(h, pos)
 G.dropped = g => { surf.dropGun(g, { x: player.pos.x + Math.sin(player.yaw) * -1.2, z: player.pos.z + Math.cos(player.yaw) * -1.2 }); };
 
 const space = new Space(camera, {
-  land: p => landOn(p), hail: h => ui.hail(h), closeHail: () => { ui.closeHail(); if (In.scheme === 'kb') lock(); },
+  land: (p, out, fwd) => descend(p, out, fwd), hail: h => ui.hail(h), closeHail: () => { ui.closeHail(); if (In.scheme === 'kb') lock(); },
   jail: info => goToJail(info), disabled: () => { toast('Ship disabled! Systems dead…', 'warn'); setTimeout(towed, 3200); },
 });
+const atmo = new Atmo(camera, surf, {
+  toSpace: (out, fwd) => { if (mode !== 'atmo') return; mode = 'space'; atmo.detach(); space.reenter(sys, planetNow.i, out); ui.setHint('space'); save(); toast('Clear of the atmosphere.', ''); },
+  landed: (x, z, yaw, pad) => { surf.parkShip(x, z, yaw, !!pad); mode = 'foot'; player.place(surf.scene, surf); const c = Math.cos(yaw), s = Math.sin(yaw); player.teleport(x + 14 * c + 4 * s, z - 14 * s + 4 * c, -Math.PI / 2); ui.setHint('foot'); player.view.visible = true; save(); },
+});
+R.atmo = atmo;
 
 // ---------- transitions ----------
 function fadeTo(fn, ms = 450) {
@@ -65,14 +71,20 @@ function enterSurface(planet, system, spawn) {
   ui.setHint('foot'); player.view.visible = true; save();
   if (planet.air < 0.3) toast('Thin atmosphere — your oxygen drains outside the dome. Keep canisters.', 'warn');
 }
-function landOn(planet) {
+function descend(planet, out, fwd) {
   if (G.shop) G.shop.lastT = G.shop.lastT || Date.now();
-  fadeTo(() => { enterSurface(planet, space.sys); toast(`Landed on ${planet.name}.`, 'good'); });
+  fadeTo(() => {
+    sys = space.sys; planetNow = planet; G.sysIndex = sys.index; G.planetIndex = planet.i; ui.closeHail(); space.endLaw(null, G.bounty > 0);
+    surf.enter(planet, sys); atmo.enterFromSpace(fwd, out); mode = 'atmo'; player.view.visible = false; ui.setHint('space'); ui.statMode = 'atmo';
+    if (G.shop && social.shopHere(surf)) { social.decorateShop(surf); G.shop.lastT = Date.now(); }
+    toast(`Entering ${planet.name}'s atmosphere. ${planet.settled ? 'Set down on a pad (auto-land) or anywhere flat.' : 'Land anywhere flat — pads mark outposts.'}`, '');
+  }, 500);
 }
+function landOn(planet) { descend(planet, atmo.outDir, space.forward()); }
 function takeOff() {
   if (G.shop) G.shop.lastT = Date.now();
   if (surf.planet && G.fuel < 3) toast('Fuel is nearly empty. Buy fuel at the Outfitters.', 'warn');
-  fadeTo(() => { mode = 'space'; space.enter(sys, { planetIndex: planetNow.i }); player.view.visible = false; ui.setHint('space'); save(); toast('Lift-off. Find a spaceway for faster, cheaper travel — but watch the limit.', ''); });
+  fadeTo(() => { mode = 'atmo'; atmo.takeoff(); player.view.visible = false; ui.setHint('space'); save(); }, 400);
 }
 function doJump(i) {
   G.fuel -= 25; fadeTo(() => { const s = systemAt(G.seed, i); sys = s; G.sysIndex = i; space.enter(s, { planetIndex: 0 }); space.ship.speed = 400; toast(`Jumped to the ${s.name} system${s.uncharted ? ' (uncharted)' : ''}.`, 'good'); save(); }, 700);
@@ -161,16 +173,36 @@ function nearestInteract() {
     if (facing < 0.1) continue; const sc = d - facing * 1.5; if (sc < bs) { bs = sc; best = { it }; }
   }
   for (const n of S.npcs) {
-    if (n.dead || n.customer) continue; const dx = n.pos.x - player.pos.x, dz = n.pos.z - player.pos.z, d = Math.hypot(dx, dz); if (d > 3.4) continue;
-    const to = new THREE.Vector3(dx, 0, dz).normalize(); const facing = f.clone().setY(0).normalize().dot(to); if (facing < 0.55) continue; const sc = d - facing * 2 - 0.5; if (sc < bs) { bs = sc; best = { npc: n }; }
+    if (n.customer) continue; const dx = n.pos.x - player.pos.x, dz = n.pos.z - player.pos.z, d = Math.hypot(dx, dz);
+    if (n.dead || n.ko) { if (d < 2.4 && !n.stripped) { const sc = d - 1; if (sc < bs) { bs = sc; best = { strip: n }; } } continue; }
+    if (d > 3.4) continue;
+    const to = new THREE.Vector3(dx, 0, dz).normalize(); const facing = f.clone().setY(0).normalize().dot(to);
+    // sneak up behind someone (crouched) to choke them out
+    const nf = new THREE.Vector3(-Math.sin(n.mesh.rotation.y), 0, -Math.cos(n.mesh.rotation.y)); const behind = nf.dot(new THREE.Vector3(-dx, 0, -dz).normalize()) < -0.35;
+    if (player.crouch && behind && d < 1.9 && !n.talking && !n.hostile && !n.guard && facing > 0.3) { best = { choke: n }; bs = -9; continue; }
+    if (facing < 0.55) continue; const sc = d - facing * 2 - 0.5; if (sc < bs) { bs = sc; best = { npc: n }; }
   }
   return best;
 }
+function chokeOut(n) {
+  n.ko = true; n.koT = 120; n.talking = false; n.approach = false; n.marker.visible = false; sfx('ui', 0.8);
+  const seen = surf.npcs.some(c => c !== n && !c.dead && !c.ko && Math.hypot(c.pos.x - n.pos.x, c.pos.z - n.pos.z) < 28 && (c.prof.cop || Math.random() < 0.35));
+  if (seen) { surf.npcs.filter(c => c.prof.cop && !c.dead).forEach(c => { c.hostile = true; }); G.bounty += 60; toast('Someone saw that. Bounty +60.', 'warn'); } else toast('Choked out, quietly. They\'ll wake in a couple of minutes.', 'good');
+  xp('stealth', 10);
+}
+function stripNPC(n) {
+  if (n.stripped) return; const mine = JSON.parse(JSON.stringify(G.outfit)); const theirs = JSON.parse(JSON.stringify(n.prof.outfit));
+  (G.wardrobe = G.wardrobe || []).push(mine); G.wardrobe = G.wardrobe.slice(-6); player.wear(theirs); surf.stripNPC(n); sfx('zip', 0.6);
+  toast(`Took the ${theirs.name}.${(theirs.tags || []).includes('police') ? ' Guards and cops will mostly look past you now.' : ''}`, 'good');
+}
 function doInteract(t) {
+  if (t.choke) { chokeOut(t.choke); return; }
+  if (t.strip) { stripNPC(t.strip); return; }
   if (t.npc) { if (t.npc.guard) { ui.bubble(t.npc, '"Back to your cell."'); return; } startTalk(t.npc, t.npc.approach && t.npc.pendingQuest ? 'quest' : undefined); return; }
   const it = t.it;
   switch (it.act) {
     case 'board': if (G.hp > 0) { stowForFlight(); takeOff(); } break;
+    case 'wardrobe': { const w = G.wardrobe || []; if (!w.length) { toast('Your wardrobe is empty. Take clothes off people who won\'t miss them.', ''); break; } const next = w.shift(); w.push(JSON.parse(JSON.stringify(G.outfit))); G.wardrobe = w; player.wear(next); toast(`Changed into: ${next.name}.`, 'good'); break; }
     case 'lockers': ui.openLockers(); break;
     case 'bench': ui.openBench('craft'); break;
     case 'tech': ui.openBench('tech'); break;
@@ -212,6 +244,14 @@ function frame(now) {
       space.update(dt, active);
       ui.update(dt, { mode, player, space, surf, prompt: space.hud.canLand ? `<kbd>${In.label('land')}</kbd> Land on ${esc(space.hud.nearName)}` : '', camera });
       camera.updateMatrixWorld(true); renderer.render(space.scene, camera);
+    } else if (mode === 'atmo') {
+      if (active && P.view) atmo.cockpit = !atmo.cockpit;
+      atmo.update(dt, active);
+      if (mode === 'atmo') {
+        surf.update(dt, { pos: atmo.ship.pos, yaw: 0 }, ui, {});
+        ui.update(dt, { mode: 'space', player, space: atmo, surf, prompt: atmo.hud.extra || '', camera });
+        camera.updateMatrixWorld(true); renderer.render(surf.scene, camera);
+      }
     } else if (mode === 'foot' || mode === 'jail') {
       const S = mode === 'jail' ? jail : surf;
       const ctx = { active, npcs: S.npcs, surf: S, hitNPC: (n, d, h) => social.hit(n, d, h, player, S, ui), onMined: () => {} };
@@ -232,7 +272,7 @@ function frame(now) {
         const nx = nearestInteract; void nx;
         // after stepping near the ship with E: board
       }
-      let prompt = pack.isOpen ? (pack.hover ? '' : '') + `<small><kbd>${In.label('interact')}</kbd> take / place · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('interact')}</kbd> whole stack · <kbd>${In.label('reload')}</kbd> drop · <kbd>${In.label('holster')}</kbd> stow · <kbd>${In.label('pack')}</kbd> close</small>` : ''; if (t && !ui.focusNpc) prompt = t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
+      let prompt = pack.isOpen ? (pack.hover ? '' : '') + `<small><kbd>${In.label('interact')}</kbd> take / place · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('interact')}</kbd> whole stack · <kbd>${In.label('reload')}</kbd> drop · <kbd>${In.label('holster')}</kbd> stow · <kbd>${In.label('pack')}</kbd> close</small>` : ''; if (t && !ui.focusNpc) prompt = t.choke ? `<kbd>${In.label('interact')}</kbd> Choke out (they can't see you)` : t.strip ? `<kbd>${In.label('interact')}</kbd> Take their clothes (${esc(t.strip.prof.outfit.name)})` : t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
       if (mode === 'jail') prompt = prompt || `<small>Sentence: ${Math.ceil(jail.timeLeft)}s</small>`; if (mode === 'jail' && jail.maxAlert > 0.05) prompt += ` <span class="alert">GUARD SUSPICIOUS ${(jail.maxAlert * 100) | 0}%</span>`;
       ui.update(dt, { mode: mode === 'jail' ? 'foot' : mode, player, space, surf: mode === 'jail' ? { ...jail, planet: { ...jail.planet, name: 'Rimway Holding', kind: 'facility' }, air: 1 } : surf, prompt, camera });
       renderer.render(S.scene, camera);

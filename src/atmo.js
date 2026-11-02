@@ -13,7 +13,7 @@ export class Atmo {
   constructor(camera, surf, hooks) {
     this.camera = camera; this.surf = surf; this.hooks = hooks; this.model = buildPlayerShip(); this.model.scale.setScalar(1.15);
     this.ship = { pos: V(), quat: new THREE.Quaternion(), speed: 0, vy: 0, throttle: 0.3, roll: 0, boost: false };
-    this.hud = {}; this.law = { state: 'none' }; this.sys = null; this.state = 'flying'; this.assist = null; this.outDir = V(0, 1, 0); this.landT = 0; this.cockpit = false;
+    this.hud = {}; this.law = { state: 'none' }; this.sys = null; this.state = 'flying'; this.assist = null; this.outDir = V(0.8, 0.45, 0.4).normalize(); this.landT = 0; this.cockpit = false;
   }
   attach() { if (this.model.parent !== this.surf.root) this.surf.root.add(this.model); this.model.visible = true; if (this.surf.shipG) this.surf.shipG.visible = false; this.sys = this.surf.sys; }
   detach() { this.model.visible = false; if (this.surf.shipG) this.surf.shipG.visible = true; }
@@ -29,7 +29,7 @@ export class Atmo {
   takeoff() {
     this.attach(); const S = this.surf, s = this.ship; const p = S.shipPos; const pad = S.padAt(p.x, p.z);
     s.pos.set(p.x, p.y + 3.4, p.z); s.quat.setFromEuler(new THREE.Euler(0, S.shipG.rotation.y, 0)); s.speed = 0; s.vy = 0; s.throttle = 0.25; this.state = 'lift'; this.liftT = 0;
-    this.assist = pad ? ASSIST[pad.kind] : null; this.outDir.set(0, 1, 0);
+    this.assist = pad ? ASSIST[pad.kind] : null;
     if (pad) toast(`Pad launch assist (${pad.kind} pad): free lift to 200 m.`, 'good'); else { toast('Unassisted lift-off from open ground: hold ' + In.label('jump') + ' to climb. Burns extra fuel.', 'warn'); G.fuel = Math.max(0, G.fuel - 4); }
   }
   groundAt(x, z) {

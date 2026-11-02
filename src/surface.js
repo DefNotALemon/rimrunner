@@ -92,7 +92,7 @@ export class Surface {
     this.colliders = this.colliders.filter(c => c.id !== 'ship'); const cs = Math.abs(Math.cos(yaw)), sn = Math.abs(Math.sin(yaw));
     this.colliders.push({ minx: x - 3.4 * cs - 6 * sn, maxx: x + 3.4 * cs + 6 * sn, minz: z - 6 * cs - 3.4 * sn, maxz: z + 6 * cs + 3.4 * sn, maxy: 7, id: 'ship' });
     this.interactables = this.interactables.filter(i => !i.ship);
-    this.interactables.push({ pos: V(x + 6, y + 1, z), r: 3.2, label: 'Board ship', act: 'board', ship: true }, { pos: V(x + 6, y + 1, z + 6), r: 3, label: 'Ship lockers', act: 'lockers', ship: true });
+    this.interactables.push({ pos: V(x + 6, y + 1, z), r: 3.2, label: 'Board ship', act: 'board', ship: true }, { pos: V(x + 6, y + 1, z + 6), r: 3, label: 'Ship lockers', act: 'lockers', ship: true }, { pos: V(x + 10, y + 1, z + 2), r: 2.4, label: 'Change outfit', act: 'wardrobe', ship: true });
     this.addBench(x + 8, z - 6, 'Field Bench', 'bench', false, true); this.addBench(x + 11, z - 3, 'Research Terminal', 'tech', true, true);
   }
   addBench(x, z, label, act, terminal, ship) {
@@ -249,6 +249,7 @@ export class Surface {
 
   updateNPC(n, dt, player) {
     n.t += dt; const p = n.pos; let sp = 0;
+    if (n.ko && !n.dead) { n.koT -= dt; if (n.koT <= 0) { n.ko = false; n.fleeFrom = { x: player.pos.x, z: player.pos.z }; n.fleeT = 0; } }
     if (n.dead || n.ko) { animateHuman(n.mesh, { ko: true, speed: 0 }); n.mesh.position.set(p.x, this.heightAt(p.x, p.z) + 0.12, p.z); return; }
     if (n.approach && !n.talking) {
       const dx = player.pos.x - p.x, dz = player.pos.z - p.z, d = Math.hypot(dx, dz);
