@@ -16,11 +16,12 @@ export const uid = () => G.uid++;
 
 export function newPack(tier = 0) {
   const n = PACK_SLOTS[tier];
-  return { tier, front: Array(n).fill(null), back: Array(n).fill(null), pocket: {}, sides: [null, null] };
+  // two front flaps (upper n slots, lower n slots) + one back flap (n slots); a pocket for unlimited small items; two side mounts
+  return { tier, front: Array(n * 2).fill(null), back: Array(n).fill(null), pocket: {}, sides: [null, null] };
 }
 export function newLockers() { return Array.from({ length: 6 }, () => Array(8).fill(null)); }
 export function resetGame() {
-  G.pack = newPack(0); G.lockers = newLockers(); G.hand = null;
+  G.pack = newPack(0); G.lockers = newLockers(); G.hand = null; G.held = null;
   addGun({ id: 'pistol', q: 1, uid: uid() });
   addItem('ration', 3); addItem('water', 3); addItem('ammo', 4); addItem('medkit', 1);
 }
@@ -130,8 +131,9 @@ export function craft(r) {
 }
 export function upgradePack() {
   if (G.pack.tier >= 3 || !removeItem('pack_frame', 1)) return false;
-  const p = G.pack; p.tier++; const n = PACK_SLOTS[p.tier];
-  while (p.front.length < n) { p.front.push(null); p.back.push(null); }
+  const p = G.pack; const old = PACK_SLOTS[p.tier]; p.tier++; const n = PACK_SLOTS[p.tier];
+  const A = p.front.slice(0, old), B = p.front.slice(old, old * 2); while (A.length < n) A.push(null); while (B.length < n) B.push(null); p.front = [...A, ...B];
+  while (p.back.length < n) p.back.push(null);
   toast(`Pack upgraded: ${n} slots per flap`, 'good'); return true;
 }
 
@@ -140,5 +142,7 @@ export function save() {
   try { const o = { ...G }; delete o.toastFn; delete o.dropped; o.savedAt = Date.now(); localStorage.setItem('rimrunner_save_v1', JSON.stringify(o)); } catch (e) {}
 }
 export function load() {
-  try { const s = JSON.parse(localStorage.getItem('rimrunner_save_v1')); if (!s || !s.pack) return false; Object.assign(G, s); return true; } catch (e) { return false; }
+  try { const s = JSON.parse(localStorage.getItem('rimrunner_save_v1')); if (!s || !s.pack) return false; Object.assign(G, s);
+    const n = PACK_SLOTS[G.pack.tier]; if (G.pack.front.length === n) G.pack.front = [...G.pack.front, ...Array(n).fill(null)];   // migrate old single-flap saves
+    return true; } catch (e) { return false; }
 }

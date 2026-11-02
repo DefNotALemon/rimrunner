@@ -9,6 +9,7 @@ import { Jail } from './jail.js';
 import { Player, onDeath } from './player.js';
 import { Social } from './social.js';
 import { UI } from './ui.js';
+import { PackWorld } from './packworld.js';
 import { audioInit, sfx } from './audio.js';
 import { ITEMS } from './data.js';
 import { fmt, clamp } from './util.js';
@@ -24,7 +25,7 @@ initInput(canvas);
 
 const social = new Social();
 let mode = 'title', started = false, surf = new Surface(camera), jail = new Jail(camera), player = new Player(camera), sys = null, planetNow = null, paused = false;
-const R = window.__rr = { G, forceActive: false, get mode() { return mode; }, get player() { return player; }, get surf() { return surf; }, get space() { return space; }, get ui() { return ui; }, get jail() { return jail; }, goToJail: (i) => goToJail(i), In, social, camera, renderer };
+const R = window.__rr = { G, forceActive: false, get mode() { return mode; }, get player() { return player; }, get surf() { return surf; }, get space() { return space; }, get ui() { return ui; }, get pack() { return pack; }, get jail() { return jail; }, goToJail: (i) => goToJail(i), In, social, camera, renderer };
 
 // ---------- hooks for the UI ----------
 function lock() { try { const r = canvas.requestPointerLock?.(); r && r.catch && r.catch(() => {}); } catch (e) {} }
@@ -38,6 +39,7 @@ const hooks = {
   restore: () => restoreGear(), jump: i => doJump(i),
 };
 const ui = new UI(hooks);
+const pack = new PackWorld(camera, { dropItem: (h, pos) => surf.dropItem(h, pos) });
 G.dropped = g => { surf.dropGun(g, { x: player.pos.x + Math.sin(player.yaw) * -1.2, z: player.pos.z + Math.cos(player.yaw) * -1.2 }); };
 
 const space = new Space(camera, {
@@ -177,13 +179,14 @@ function doInteract(t) {
     case 'lease': if (social.leaseShop(surf)) { sfx('coin'); } else toast(G.shop ? 'You already lease a shop on ' + G.shop.planetName + '.' : 'You need 400 cr to lease this unit.', 'warn'); break;
     case 'shop': ui.openShop(social, surf); break;
     case 'pickup': { const g = it.data.g; if (addGun(g)) { surf.root.remove(it.data.m); surf.interactables = surf.interactables.filter(x => x !== it); toast(`Picked up ${ITEMS[g.id].name}.`, 'good'); } else toast('No side mount or holster slot free.', 'warn'); break; }
+    case 'pickupItem': { const h = it.data.h; if (G.hand || G.held) { toast('Your hand is full.', 'warn'); break; } surf.root.remove(it.data.m); surf.interactables = surf.interactables.filter(x => x !== it); G.held = { id: h.id, n: h.n, item: true }; toast(`Picked up ${ITEMS[h.id].name}.`, 'good'); break; }
     case 'cot': toast('You lie on the cot. Time passes…'); jail.timeLeft = Math.max(0, jail.timeLeft - 6); break;
     case 'celldoor': ui.lockpick(lvl('lockpick'), ok => { if (ok) { jail.openCell(); toast('Click. The cell door swings open.', 'good'); xp('lockpick', 20); } else { toast('The pick snapped. Try again.', 'warn'); jail.timeLeft += 4; xp('lockpick', 4); } }); break;
     case 'evidence': if (G.confiscated) { restoreGear(); } else toast('Locker is empty.'); break;
     case 'jailexit': if (G.confiscated) toast('You still need your gear! (Or leave it behind — reclaim it later at a Patrol desk for 300 cr.)', 'warn'); releasePlayer(true); break;
   }
 }
-function stowForFlight() { if (G.hand) stowHand(); }
+function stowForFlight() { if (pack.blocking) pack.requestClose(); if (G.held) { addItem(G.held.id, G.held.n || 1); G.held = null; } if (G.hand) stowHand(); }
 
 // ---------- main loop ----------
 let last = performance.now(), lastPrompt = null;
@@ -193,9 +196,9 @@ function frame(now) {
   const P = In.pressed;
   const locked = In.locked || In.scheme !== 'kb' || R.forceActive;
   if (started) {
-    if (P.back) { if (ui.modal && ui.modal !== 'closing') ui.closeAll(); }
+    if (P.back) { if (ui.modal && ui.modal !== 'closing') ui.closeAll(); else if (pack.blocking) pack.requestClose(); }
     if (!ui.hail_ && mode !== 'title') {
-      if (P.pack && (mode === 'foot' || mode === 'jail')) { if (ui.modal === 'pack' || ui.modal === 'packwait') ui.closeAll(); else if (!ui.modal) ui.openPack(); }
+      if (P.pack && (mode === 'foot' || mode === 'jail')) { if (pack.isOpen || pack.phase === 'opening' || pack.phase === 'lowering') pack.requestClose(); else if (pack.phase === 'idle' && !ui.modal) pack.begin(player); }
       if (P.pack && mode === 'space' && !ui.modal) ui.openLockers(); else if (P.pack && mode === 'space' && ui.modal === 'lockers') ui.closeAll();
       if (P.journal) { if (ui.modal === 'journal') ui.closeAll(); else if (!ui.modal) ui.openJournal(); }
       if (P.map && mode === 'space') { if (ui.modal === 'map') ui.closeAll(); else if (!ui.modal) ui.openMap(space, !space.inLane); }
@@ -213,9 +216,11 @@ function frame(now) {
       const S = mode === 'jail' ? jail : surf;
       const ctx = { active, npcs: S.npcs, surf: S, hitNPC: (n, d, h) => social.hit(n, d, h, player, S, ui), onMined: () => {} };
       player.update(dt, ctx);
+      if (pack.scene !== S.scene) { if (pack.scene) [pack.group, pack.ring, pack.label].forEach(o => pack.scene.remove(o)); pack.attach(S.scene); }
+      camera.updateMatrixWorld(true); pack.update(dt, player, ctx);
       S.update(dt, player, ui, { release: () => releasePlayer(false), busted: () => bust() });
-      const t = active ? nearestInteract() : null;
-      if (active) {
+      const t = active && !pack.blocking ? nearestInteract() : null;
+      if (active && !pack.blocking) {
         if (P.interact && t) doInteract(t);
         for (let i = 0; i < 4; i++) if (P['q' + (i + 1)] && player.focus > 0.5) ui.quick(i);
         if (P.use && !P.interact) player.eatNow();
@@ -227,7 +232,7 @@ function frame(now) {
         const nx = nearestInteract; void nx;
         // after stepping near the ship with E: board
       }
-      let prompt = ''; if (t && !ui.focusNpc) prompt = t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
+      let prompt = pack.isOpen ? (pack.hover ? '' : '') + `<small><kbd>${In.label('interact')}</kbd> take / place · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('interact')}</kbd> whole stack · <kbd>${In.label('reload')}</kbd> drop · <kbd>${In.label('holster')}</kbd> stow · <kbd>${In.label('pack')}</kbd> close</small>` : ''; if (t && !ui.focusNpc) prompt = t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
       if (mode === 'jail') prompt = prompt || `<small>Sentence: ${Math.ceil(jail.timeLeft)}s</small>`; if (mode === 'jail' && jail.maxAlert > 0.05) prompt += ` <span class="alert">GUARD SUSPICIOUS ${(jail.maxAlert * 100) | 0}%</span>`;
       ui.update(dt, { mode: mode === 'jail' ? 'foot' : mode, player, space, surf: mode === 'jail' ? { ...jail, planet: { ...jail.planet, name: 'Rimway Holding', kind: 'facility' }, air: 1 } : surf, prompt, camera });
       renderer.render(S.scene, camera);

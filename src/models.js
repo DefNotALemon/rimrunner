@@ -1,7 +1,7 @@
 // Procedural models: planets of many shapes, ships, squad-car police cruisers, people
 import * as THREE from '../vendor/three.module.js';
 import { rng, fbm, noise3 } from './util.js';
-import { PLANET_KINDS } from './data.js';
+import { PLANET_KINDS, ITEMS } from './data.js';
 
 const std = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7, metalness: 0.2, ...o });
 const mesh = (g, m) => { const x = new THREE.Mesh(g, m); return x; };
@@ -179,4 +179,36 @@ export function gunMesh(id, q = 1) {
   else if (id === 'breacher') { add(0.06, 0.07, 0.55, 0, 0, -0.26); add(0.05, 0.09, 0.22, 0, -0.01, 0.08, std(0x6a4a2a)); add(0.07, 0.04, 0.2, 0, -0.05, -0.2, std(0x7a5a3a)); }
   else { add(0.06, 0.08, 0.55, 0, 0, -0.26, col); const e = add(0.03, 0.03, 0.4, 0, 0.055, -0.3, new THREE.MeshBasicMaterial({ color: 0x48d6ff })); add(0.05, 0.1, 0.06, 0, -0.08, -0.02); }
   return g;
+}
+
+
+// ---- little 3D models for every inventory item (about 5-12 cm, real scale) ----
+export function itemMesh(id) {
+  const it = ITEMS[id]; if (it.kind === 'gun') return gunMesh(id);
+  const g = new THREE.Group(); const col = new THREE.Color(it.color);
+  const mat = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, metalness: 0.1, ...o });
+  const add = (geo, m, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.rotation.set(rx, ry, rz); me.castShadow = true; g.add(me); return me; };
+  const rock = (r, y, x = 0, z = 0) => add(new THREE.DodecahedronGeometry(r, 0), mat(col, { roughness: 0.45, metalness: 0.4, flatShading: true, emissive: col, emissiveIntensity: id === 'hymnstone' ? 0.6 : 0.06 }), x, y, z, Math.random() * 3, Math.random() * 3, Math.random() * 3);
+  switch (id) {
+    case 'iron_plate': case 'steel': case 'alloy': add(new THREE.BoxGeometry(0.11, 0.012, 0.07), mat(col, { metalness: 0.85, roughness: 0.3 }), 0, 0.01); add(new THREE.BoxGeometry(0.11, 0.012, 0.07), mat(col, { metalness: 0.85, roughness: 0.3 }), 0.01, 0.024, 0.005, 0, 0.2); break;
+    case 'wire': add(new THREE.TorusGeometry(0.035, 0.012, 8, 16), mat(0xd98b52, { metalness: 0.8, roughness: 0.3 }), 0, 0.02, 0, Math.PI / 2); add(new THREE.TorusGeometry(0.035, 0.012, 8, 16), mat(0xd98b52, { metalness: 0.8, roughness: 0.3 }), 0, 0.034, 0, Math.PI / 2); break;
+    case 'lens': add(new THREE.CylinderGeometry(0.04, 0.04, 0.012, 20), mat(0xcfe9ff, { transparent: true, opacity: 0.7, roughness: 0.05, metalness: 0.2 }), 0, 0.012); break;
+    case 'circuit': add(new THREE.BoxGeometry(0.1, 0.008, 0.07), mat(0x2a8a5a), 0, 0.008); for (let i = 0; i < 4; i++) add(new THREE.BoxGeometry(0.02, 0.01, 0.02), mat(0x16161a), -0.03 + i * 0.02, 0.018, (i % 2 ? 0.015 : -0.015)); add(new THREE.BoxGeometry(0.08, 0.002, 0.004), mat(0xe0c060, { metalness: 0.9 }), 0, 0.014, 0.03); break;
+    case 'cell': add(new THREE.CylinderGeometry(0.025, 0.025, 0.08, 14), mat(0xffd23f, { metalness: 0.4 }), 0, 0.03, 0, 0, 0, Math.PI / 2); add(new THREE.CylinderGeometry(0.012, 0.012, 0.01, 8), mat(0x888888, { metalness: 0.9 }), 0.045, 0.03, 0, 0, 0, Math.PI / 2); break;
+    case 'gunpart': add(new THREE.BoxGeometry(0.05, 0.02, 0.025), mat(0x7d8590, { metalness: 0.8 }), -0.02, 0.012); add(new THREE.CylinderGeometry(0.01, 0.01, 0.07, 8), mat(0x555a62, { metalness: 0.9 }), 0.01, 0.015, 0.02, 0, 0, Math.PI / 2); add(new THREE.BoxGeometry(0.02, 0.03, 0.02), mat(0x9a9fa6, { metalness: 0.7 }), 0.03, 0.02, -0.02); break;
+    case 'ammo': add(new THREE.BoxGeometry(0.09, 0.04, 0.06), mat(0x7a6a2a, { roughness: 0.8 }), 0, 0.02); for (let i = 0; i < 4; i++) add(new THREE.CylinderGeometry(0.006, 0.006, 0.03, 6), mat(0xc9a227, { metalness: 0.9 }), -0.03 + i * 0.02, 0.055, 0); break;
+    case 'ruby': add(new THREE.OctahedronGeometry(0.03, 0), mat(0xe0314b, { roughness: 0.1, metalness: 0.2, emissive: 0x801020, emissiveIntensity: 0.5, flatShading: true }), 0, 0.035).scale.set(1, 1.3, 1); break;
+    case 'data_chip': add(new THREE.BoxGeometry(0.05, 0.006, 0.035), mat(0x16222a), 0, 0.006); add(new THREE.BoxGeometry(0.03, 0.007, 0.02), mat(0x4fd1ff, { emissive: 0x1a6a8a, emissiveIntensity: 0.8 }), 0, 0.011); break;
+    case 'parcel': add(new THREE.BoxGeometry(0.1, 0.06, 0.08), mat(0xc8a46b, { roughness: 0.9 }), 0, 0.03); add(new THREE.BoxGeometry(0.102, 0.062, 0.01), mat(0x8a5a2a), 0, 0.03); add(new THREE.BoxGeometry(0.01, 0.062, 0.082), mat(0x8a5a2a), 0, 0.03); break;
+    case 'ration': add(new THREE.BoxGeometry(0.1, 0.018, 0.04), mat(0xb98c52, { roughness: 0.9 }), 0, 0.012); add(new THREE.BoxGeometry(0.102, 0.02, 0.02), mat(0x3a5a8a), 0, 0.013); break;
+    case 'water': add(new THREE.CylinderGeometry(0.03, 0.03, 0.11, 14), mat(0x58b4ff, { transparent: true, opacity: 0.75, roughness: 0.1 }), 0, 0.055); add(new THREE.CylinderGeometry(0.012, 0.012, 0.025, 8), mat(0x2a2a2a), 0, 0.12); break;
+    case 'medkit': add(new THREE.BoxGeometry(0.11, 0.05, 0.08), mat(0xf2f2f2, { roughness: 0.5 }), 0, 0.025); add(new THREE.BoxGeometry(0.04, 0.052, 0.012), mat(0xd02a2a), 0, 0.026, 0.0, 0, 0, 0); add(new THREE.BoxGeometry(0.012, 0.052, 0.04), mat(0xd02a2a), 0, 0.026); break;
+    case 'o2_tank': add(new THREE.CapsuleGeometry(0.03, 0.09, 4, 12), mat(0x9fe8ff, { metalness: 0.5, roughness: 0.3 }), 0, 0.03, 0, 0, 0, Math.PI / 2); add(new THREE.CylinderGeometry(0.01, 0.01, 0.02, 8), mat(0xaaaaaa, { metalness: 0.9 }), 0.075, 0.03, 0, 0, 0, Math.PI / 2); break;
+    case 'pack_frame': add(new THREE.BoxGeometry(0.1, 0.012, 0.012), mat(0xb8793a, { metalness: 0.5 }), 0, 0.01, 0.04); add(new THREE.BoxGeometry(0.1, 0.012, 0.012), mat(0xb8793a, { metalness: 0.5 }), 0, 0.01, -0.04); add(new THREE.BoxGeometry(0.012, 0.012, 0.09), mat(0xb8793a, { metalness: 0.5 }), 0.045, 0.01); add(new THREE.BoxGeometry(0.012, 0.012, 0.09), mat(0xb8793a, { metalness: 0.5 }), -0.045, 0.01); break;
+    case 'coil': add(new THREE.TorusGeometry(0.04, 0.012, 8, 20), mat(0x37e6c9, { emissive: 0x1a8a7a, emissiveIntensity: 0.9, metalness: 0.5 }), 0, 0.04, 0, Math.PI / 2); add(new THREE.TorusGeometry(0.028, 0.008, 8, 20), mat(0x888888, { metalness: 0.9 }), 0, 0.04, 0, Math.PI / 2); break;
+    case 'tank_ext': add(new THREE.CylinderGeometry(0.035, 0.035, 0.1, 14), mat(0xe85a2b, { metalness: 0.5 }), 0, 0.035, 0, 0, 0, Math.PI / 2); add(new THREE.SphereGeometry(0.035, 12, 8), mat(0xe85a2b, { metalness: 0.5 }), 0.05, 0.035); add(new THREE.SphereGeometry(0.035, 12, 8), mat(0xe85a2b, { metalness: 0.5 }), -0.05, 0.035); break;
+    case 'fuel': add(new THREE.CylinderGeometry(0.014, 0.014, 0.11, 8), mat(0x7bff6a, { emissive: 0x2a8a2a, emissiveIntensity: 0.9 }), 0, 0.016, 0, 0, 0, Math.PI / 2); add(new THREE.CylinderGeometry(0.018, 0.018, 0.012, 8), mat(0x333333, { metalness: 0.8 }), 0.05, 0.016, 0, 0, 0, Math.PI / 2); add(new THREE.CylinderGeometry(0.018, 0.018, 0.012, 8), mat(0x333333, { metalness: 0.8 }), -0.05, 0.016, 0, 0, 0, Math.PI / 2); break;
+    default: rock(0.04, 0.035); rock(0.026, 0.02, 0.05, 0.02);
+  }
+  g.userData.id = id; return g;
 }

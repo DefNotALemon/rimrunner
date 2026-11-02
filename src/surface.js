@@ -3,12 +3,13 @@ import * as THREE from '../vendor/three.module.js';
 import { rng, clamp, lerp, hashStr } from './util.js';
 import { PLANET_KINDS, ITEMS } from './data.js';
 import { G } from './state.js';
-import { buildPlayerShip, gunMesh } from './models.js';
+import { buildPlayerShip, gunMesh, itemMesh } from './models.js';
 import { makePerson } from './gen.js';
 import { buildHuman, animateHuman, OUTFITS, outfitFor, setOutfit } from './people.js';
 import { HeightField, Terrain, Scatter } from './terrain.js';
 import { Sky } from './sky.js';
 import { makeBuilding, dressTown } from './buildings.js';
+import { surfMat } from './textures.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const std = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, metalness: 0.05, ...o });
@@ -38,6 +39,7 @@ export class Surface {
     this.flatR = planet.settled ? 80 : 24;
     hf.flats.push({ x: 0, z: 0, r: this.flatR, blend: planet.settled ? 70 : 30, h: 0 });
     this.padPos = planet.settled ? V(-40, 0, 8) : V(10, 0, 6);
+    this.footprints = []; this.padLights = []; this.planPads(rng(planet.seed ^ 0x9ad));
     this.terrain = new Terrain(this.root, hf); this.terrain.update(0, 0, true);
     this.scatter = new Scatter(this.root, hf, planet.kind); this.avoidFn = (x, z) => planet.settled && Math.hypot(x, z) < 92 || Math.hypot(x - this.padPos.x, z - this.padPos.z) < 18;
     if (hf.water > -999) {
@@ -48,6 +50,7 @@ export class Surface {
     this.sky.set(K.sky, planet.air, 0.35 + Math.abs(Math.sin(planet.seed)) * 0.5); this.scene.add(this.sky.mesh);
     this.scene.fog = new THREE.Fog(0x888888, 150, planet.air > 0.3 ? 16000 : 60000);
     const r = rng(planet.seed ^ 0x5151);
+    this.buildPadMeshes();
     this.parkShip(this.padPos.x, this.padPos.z, 0, true);
     if (planet.settled) this.buildTown(r); else if (r.chance(0.5)) this.addLoneWanderer(r);
     this.updateNodes(opts.px ?? this.padPos.x, opts.pz ?? this.padPos.z);
@@ -83,9 +86,7 @@ export class Surface {
     if (this.shipG) this.root.remove(this.shipG);
     const g = new THREE.Group(); const m = buildPlayerShip(); m.scale.setScalar(1.15); m.position.y = 3.1; g.add(m);
     const leg = std(0x3b4048); for (const [lx, lz] of [[-3, -4], [3, -4], [-3, 4], [3, 4]]) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.25, 2.6, 6), leg); l.position.set(lx, 1.3, lz); g.add(l); }
-    const settledPad = this.planet.settled && atPad;
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 0.3, 40), settledPad ? std(0x555a63) : std(0x2a2622, { roughness: 1 })); pad.position.y = 0.05; pad.receiveShadow = true; g.add(pad);
-    if (settledPad) { const ring = new THREE.Mesh(new THREE.TorusGeometry(10.5, 0.12, 6, 48), new THREE.MeshBasicMaterial({ color: 0xffb020 })); ring.rotation.x = Math.PI / 2; ring.position.y = 0.25; g.add(ring); }
+    if (!this.padAt(x, z)) { const sc = new THREE.Mesh(new THREE.CircleGeometry(5.5, 24), new THREE.MeshBasicMaterial({ color: 0x15110e, transparent: true, opacity: 0.55, depthWrite: false })); sc.rotation.x = -Math.PI / 2; sc.position.y = 0.04; g.add(sc); }
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
     const y = this.heightAt(x, z); g.position.set(x, y, z); g.rotation.y = yaw; this.root.add(g); this.shipG = g; this.shipPos = V(x, y, z); this.padPos = V(x, y, z);
     this.colliders = this.colliders.filter(c => c.id !== 'ship'); const cs = Math.abs(Math.cos(yaw)), sn = Math.abs(Math.sin(yaw));
@@ -103,7 +104,42 @@ export class Surface {
     const it = { pos: V(x, y + 1, z + 0.9), r: 2.2, label, act }; if (ship) it.ship = true; this.interactables.push(it);
   }
 
-  building(b) { const rec = makeBuilding(this, b); this.buildings.push(rec); return rec; }
+
+  // ---------- landing platforms: optional, but they give free lift-off assist ----------
+  planPads(r) {
+    const planet = this.planet; this.pads = []; const specs = [{ x: this.padPos.x, z: this.padPos.z, kind: 'medium', main: true }];
+    if (planet.settled) specs.push({ x: -68, z: 42, kind: 'small' }, { x: -84, z: -14, kind: 'large' }, { x: 72, z: -52, kind: 'cargo' }, { x: 22, z: 74, kind: 'medium' }, { x: -20, z: -70, kind: 'small' });
+    const n = r.int(1, 3) + (planet.settled ? 0 : 1);
+    for (let i = 0; i < n; i++) { const a = r() * 6.283, dd = r.range(planet.settled ? 260 : 400, 1800); specs.push({ x: Math.cos(a) * dd, z: Math.sin(a) * dd, kind: r.pick(['small', 'small', 'medium', 'large']), outpost: true }); }
+    const R = { small: 7, medium: 10, large: 16, cargo: 22 };
+    for (const sp of specs) { sp.r = R[sp.kind]; sp.h = this.hf.at(sp.x, sp.z, 3); this.hf.flats.push({ x: sp.x, z: sp.z, r: sp.r + 1.5, blend: 10, h: sp.h }); this.pads.push(sp); }
+  }
+  padAt(x, z, mult = 1) { for (const p of this.pads || []) if (Math.hypot(x - p.x, z - p.z) < p.r * mult) return p; return null; }
+  nearestPad(x, z) { let b = null, bd = 1e9; for (const p of this.pads || []) { const d = Math.hypot(x - p.x, z - p.z); if (d < bd) { bd = d; b = p; } } return b; }
+  buildPadMeshes() {
+    const S = std;
+    for (const p of this.pads) {
+      const g = new THREE.Group(); g.position.set(p.x, p.h, p.z); const top = 0.03;
+      const slab = new THREE.Mesh(new THREE.CylinderGeometry(p.r, p.r + 0.4, 1.4, 56), surfMat('concrete', p.outpost ? 0x7e7a72 : 0x8e9298)); slab.position.y = top - 0.7; slab.receiveShadow = true; g.add(slab);
+      const c = document.createElement('canvas'); c.width = c.height = 512; const x = c.getContext('2d'); x.clearRect(0, 0, 512, 512);
+      x.strokeStyle = '#f2c230'; x.lineWidth = 14; x.beginPath(); x.arc(256, 256, 236, 0, 7); x.stroke(); x.lineWidth = 5; x.beginPath(); x.arc(256, 256, 214, 0, 7); x.stroke();
+      x.fillStyle = '#f2f2f2'; x.font = 'bold 190px Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(p.main ? 'H' : { small: 'S', medium: 'M', large: 'L', cargo: 'C' }[p.kind], 256, 250);
+      x.font = 'bold 34px monospace'; x.fillStyle = '#f2c230'; x.fillText(p.main ? 'HOME' : p.kind.toUpperCase(), 256, 400);
+      const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 8;
+      const paint = new THREE.Mesh(new THREE.CircleGeometry(p.r * 0.97, 48), new THREE.MeshStandardMaterial({ map: tx, transparent: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); paint.rotation.x = -Math.PI / 2; paint.position.y = top + 0.01; g.add(paint);
+      const nL = Math.round(p.r * 1.7); const lc = p.outpost ? 0xffb347 : 0x62ff9a;
+      for (let i = 0; i < nL; i++) { const a = i / nL * 6.283; const l = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial({ color: lc })); l.position.set(Math.cos(a) * (p.r - 0.45), top + 0.1, Math.sin(a) * (p.r - 0.45)); g.add(l); this.padLights.push({ m: l, i }); }
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 7, 6), S(0x30343a, { metalness: 0.6 })); mast.position.set(p.r - 0.8, 3.5, 0); mast.castShadow = true; g.add(mast);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), new THREE.MeshBasicMaterial({ color: lc })); bulb.position.set(p.r - 0.8, 7.2, 0); g.add(bulb); (this.blinkers = this.blinkers || []).push(bulb);
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 220, 8, 1, true), new THREE.MeshBasicMaterial({ color: lc, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })); beam.position.set(p.r - 0.8, 110, 0); g.add(beam);
+      if (p.kind === 'large') for (const s of [-1, 1]) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 9, 6), S(0x30343a, { metalness: 0.6 })); t.position.set(s * (p.r - 1.5), 4.5, p.r * 0.6 * -s); g.add(t); const lamp = new THREE.Mesh(new THREE.BoxGeometry(1, 0.4, 0.5), new THREE.MeshBasicMaterial({ color: 0xfff6d0 })); lamp.position.set(s * (p.r - 1.5), 9.2, p.r * 0.6 * -s); g.add(lamp); }
+      if (p.kind === 'cargo') { for (let i = 0; i < 3; i++) { const cm = new THREE.Mesh(new THREE.BoxGeometry(6, 2.5, 2.4), surfMat('metal', [0x8a3a2a, 0x2a5a8a, 0x4a6a3a][i])); cm.position.set(-p.r - 5, 1.25 + (i === 2 ? 2.5 : 0), -4 + (i % 2) * 5); cm.castShadow = true; g.add(cm); this.colliders.push({ minx: p.x - p.r - 8, maxx: p.x - p.r - 2, minz: p.z - 5.2 + (i % 2) * 5, maxz: p.z - 2.8 + (i % 2) * 5, maxy: 5 }); } const crane = new THREE.Mesh(new THREE.BoxGeometry(0.6, 12, 0.6), S(0xe0b020)); crane.position.set(p.r + 2, 6, 6); g.add(crane); const arm = new THREE.Mesh(new THREE.BoxGeometry(10, 0.5, 0.5), S(0xe0b020)); arm.position.set(p.r - 3, 12, 6); g.add(arm); }
+      if (p.outpost) { const cr = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), S(0x8a6a3e)); cr.position.set(-p.r + 1.5, 0.5, 2); g.add(cr); const dr = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.95, 12), S(0xc8422a, { metalness: 0.5 })); dr.position.set(-p.r + 1.2, 0.5, -0.5); g.add(dr); }
+      g.traverse(o => { if (o.isMesh && o.geometry.type !== 'CircleGeometry') o.receiveShadow = true; }); this.root.add(g);
+    }
+  }
+
+  building(b) { const rec = makeBuilding(this, b); this.buildings.push(rec); this.footprints.push({ minx: rec.x0 - 0.6, maxx: rec.x1 + 0.6, minz: rec.z0 - 0.6, maxz: rec.z1 + 0.6, top: rec.H + 2.5 }); return rec; }
   buildTown(r) {
     const specs = [
       { id: 'exchange', name: 'Rim Exchange', x: -26, z: -28, w: 15, d: 11, door: 's', style: 'brick', color: 0xb5694c, awning: 0x2a5a7a, sign: '#3a2a10' },
@@ -171,6 +207,10 @@ export class Surface {
     }
     return null;
   }
+  dropItem(h, pos) {
+    const m = itemMesh(h.id); m.scale.setScalar(2.4); const y = this.heightAt(pos.x, pos.z) + 0.02; m.position.set(pos.x, y, pos.z); m.rotation.y = Math.random() * 6; this.root.add(m);
+    const it = { pos: V(pos.x, y, pos.z), r: 1.8, label: `Pick up ${ITEMS[h.id].name}${h.n > 1 ? ' ×' + h.n : ''}`, act: 'pickupItem', data: { h, m } }; this.interactables.push(it); this.pickups.push(it);
+  }
   dropGun(g, pos) {
     const m = gunMesh(g.id); m.scale.setScalar(1.6); const y = this.heightAt(pos.x, pos.z) + 0.25; m.position.set(pos.x, y, pos.z); m.rotation.y = Math.random() * 6; this.root.add(m);
     const it = { pos: V(pos.x, y, pos.z), r: 2, label: `Pick up ${ITEMS[g.id].name}`, act: 'pickup', data: { g, m } }; this.interactables.push(it); this.pickups.push(it);
@@ -188,6 +228,7 @@ export class Surface {
     const wl = (1 - L) * 1.1 + 0.05; for (const m of this.windowMats) m.emissiveIntensity = wl;
     for (const l of this.lamps) l.intensity = (1 - L) * 30;
     const blink = Math.floor(G.time * 1.5) % 2 === 0; for (const b of this.blinkers) b.visible = blink;
+    for (const l of this.padLights || []) l.m.visible = ((Math.floor(G.time * 5) + l.i) % 5) < 4;
     for (const s of this.signs) s.material.emissiveIntensity = 0.25 + (1 - L) * 0.9;
   }
 

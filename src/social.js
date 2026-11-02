@@ -141,7 +141,7 @@ export class Social {
   }
   findGun(gid) {
     const P = G.pack; for (let i = 0; i < 2; i++) if (P.sides[i] && P.sides[i].id === gid) return { t: 'side', i };
-    for (const face of ['front', 'back']) for (let i = 0; i < P.tier * 2 + 4; i++) { const s = P[face][i]; if (s && s.uid && s.id === gid) return { t: 'slot', face, i }; }
+    for (const face of ['front', 'back']) for (let i = 0; i < P[face].length; i++) { const s = P[face][i]; if (s && s.uid && s.id === gid) return { t: 'slot', face, i }; }
     return null;
   }
   complete(opt) {

@@ -163,14 +163,14 @@ export class UI {
     // the pack comes off your shoulder and is set on the floor in front of you; the UI opens once it's down
     this.hooks.packOpen(true); this.packFace = 'front'; this.sel = null; this.modal = 'packwait'; document.exitPointerLock?.(); document.body.classList.add('modal'); sfx('zip', 0.7);
     this.packTimer = setTimeout(() => {
-      if (this.modal !== 'packwait') return; this.open('pack', '', 'packwrap'); this.panel.style.setProperty('--bs', clamp((innerHeight - 250) / 470, 0.5, 1)); this.renderPack(true);
+      if (this.modal !== 'packwait') return; this.open('pack', '', 'packwrap'); this.panel.style.setProperty('--bs', clamp((innerHeight - 250) / 600, 0.42, 1)); this.renderPack(true);
       requestAnimationFrame(() => { const b = $('.bag', this.panel); if (!b) return; b.classList.add('in'); setTimeout(() => b.classList.add('open'), 380); });
     }, 950);
   }
   renderPack(first) {
     const P = G.pack; const n = PACK_SLOTS[P.tier];
     const prevState = this.panel.querySelector('.bag'); const was = prevState ? prevState.className : 'bag';
-    const flapSlots = face => `<div class="slots n${n}">${P[face].slice(0, n).map((e, i) => `<div data-face="${face}" data-i="${i}" class="nav">${this.slotHTML(e, this.sel && this.sel.t === 'slot' && this.sel.face === face && this.sel.i === i ? 'sel' : '')}</div>`).join('')}</div>`;
+    const flapSlots = (face, from, to) => `<div class="slots n${n}">${P[face].slice(from, to).map((e, k) => { const i = from + k; return `<div data-face="${face}" data-i="${i}" class="nav">${this.slotHTML(e, this.sel && this.sel.t === 'slot' && this.sel.face === face && this.sel.i === i ? 'sel' : '')}</div>`; }).join('')}</div>`;
     const pocket = Object.entries(P.pocket).filter(([, c]) => c > 0);
     const sideHTML = i => `<div class="side s${i} nav" data-side="${i}">${P.sides[i] ? `<div class="slot gunslot ${this.sel && this.sel.t === 'side' && this.sel.i === i ? 'sel' : ''}">${gunSVG(P.sides[i].id)}<span class="nm">${esc(ITEMS[P.sides[i].id].name)}</span></div>` : '<div class="slot empty"><small>side mount</small></div>'}</div>`;
     const hand = G.hand;
@@ -178,17 +178,17 @@ export class UI {
       <div class="packtop">
         <div class="handbox"><small>IN HAND</small>${hand ? `<div class="hh">${gunSVG(hand.id)}<b>${esc(ITEMS[hand.id].name)}</b><span>${((hand.q || 1) * 100) | 0}%</span></div>` : '<div class="hh none">Empty hands<br><small>aim to draw your pistol</small></div>'}
           ${hand ? '<div class="hb"></div>' : ''}</div>
-        <div class="packtitle"><h2>${esc(PACK_NAMES[P.tier])}</h2><small>${n} slots per flap · front pocket holds unlimited small items · 2 side mounts</small></div>
+        <div class="packtitle"><h2>${esc(PACK_NAMES[P.tier])}</h2><small>two front flaps + a back flap, ${n} slots each · front pocket holds unlimited small items · 2 side mounts</small></div>
         <button class="x" data-close>✕</button>
       </div>
       <div class="bagstage"><div class="${was.includes('bag') ? was : 'bag'}" id="bagEl">
         <div class="bagface front">
           <div class="strap l"></div><div class="strap r"></div>
-          <div class="flap"><div class="flaplabel">FRONT FLAP</div>${flapSlots('front')}</div>
+          <div class="flap"><div class="flaplabel">UPPER FRONT FLAP</div>${flapSlots('front', 0, n)}</div><div class="flap lower"><div class="flaplabel">LOWER FRONT FLAP</div>${flapSlots('front', n, n * 2)}</div>
           <div class="pocket"><div class="pocketlabel">FRONT POCKET <small>(small items, unlimited)</small></div><div class="pitems">${pocket.length ? pocket.map(([id, c]) => `<div class="pit nav ${this.sel && this.sel.t === 'pocket' && this.sel.id === id ? 'sel' : ''}" data-pocket="${id}"><i style="background:${ITEMS[id].color}"></i>${esc(ITEMS[id].name)} <b>×${c}</b></div>`).join('') : '<em>empty</em>'}</div></div>
           <div class="buckle"></div>
         </div>
-        <div class="bagface back"><div class="flap open2"><div class="flaplabel">BACK FLAP</div>${flapSlots('back')}</div></div>
+        <div class="bagface back"><div class="flap open2"><div class="flaplabel">BACK FLAP</div>${flapSlots('back', 0, n)}</div></div>
         ${sideHTML(0)}${sideHTML(1)}
       </div></div>
       <div class="packbar"><button id="flip">⟲ ${this.packFace === 'front' ? 'Back flap' : 'Front flap'}</button><div id="info"></div></div>`;
@@ -211,7 +211,7 @@ export class UI {
       info.innerHTML = `<b>${esc(it.name)}</b> <small>${gunClsLabel(id)} · quality ${((e.q || 1) * 100) | 0}% · dmg ${sp.dmg}${sp.pellets > 1 ? '×' + sp.pellets : ''} · mag ${sp.mag} · worth ${fmt(itemValue(e))} cr</small>`;
       const loc = s.t === 'side' ? { t: 'side', i: s.i } : { t: 'slot', face: s.face, i: s.i };
       box.append(this.btn(G.hand ? 'Swap with hands' : 'Hold', () => { holdFrom(loc); this.sel = null; this.renderPack(); }, 'pri'));
-      if (s.t === 'side' && canHolster(id)) box.append(this.btn('Holster in a slot', () => { const free = [...P.front.map((x, i) => ['front', i, x]), ...P.back.map((x, i) => ['back', i, x])].find(a => !a[2] && a[1] < PACK_SLOTS[P.tier]); if (!free) { toast('No free slot to holster in.', 'warn'); return; } const g = takeAt(loc); P[free[0]][free[1]] = g; this.sel = null; this.renderPack(); }));
+      if (s.t === 'side' && canHolster(id)) box.append(this.btn('Holster in a slot', () => { const free = [...P.front.map((x, i) => ['front', i, x]), ...P.back.map((x, i) => ['back', i, x])].find(a => !a[2]); if (!free) { toast('No free slot to holster in.', 'warn'); return; } const g = takeAt(loc); P[free[0]][free[1]] = g; this.sel = null; this.renderPack(); }));
       if (s.t === 'slot') box.append(this.btn('Mount on side', () => { const i = P.sides.findIndex(x => !x); if (i < 0) { toast('Both side mounts are in use.', 'warn'); return; } P.sides[i] = takeAt(loc); this.sel = null; this.renderPack(); }));
       box.append(this.btn('Drop', () => { const g = takeAt(loc); G.dropped(g); this.sel = null; this.renderPack(); }, 'warn'));
       return;

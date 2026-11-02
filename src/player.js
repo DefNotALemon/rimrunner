@@ -4,7 +4,7 @@ import { clamp, damp, lerp } from './util.js';
 import { In } from './input.js';
 import { G, toast, quickPull, stowHand, removeItem, count, lvl, xp, addItem, canAdd } from './state.js';
 import { ITEMS, GUN } from './data.js';
-import { buildBackpackMesh, gunMesh } from './models.js';
+import { buildBackpackMesh, gunMesh, itemMesh } from './models.js';
 import { buildHuman, animateHuman, setOutfit, OUTFITS, makeLook, GUN_ATTACH } from './people.js';
 import { sfx } from './audio.js';
 
@@ -30,6 +30,7 @@ export class Player {
     const mkArm = () => { const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.029, 1, 10), this.sleeve); fore.geometry.translate(0, 0.5, 0); const hand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.1), this.skin); const fing = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.03, 0.05), this.skin); fing.position.set(0, -0.005, -0.07); hand.add(fing); this.view.add(fore, hand); return { fore, hand }; };
     this.armL = mkArm(); this.armR = mkArm(); this.applyOutfitColors();
     this.gunHolder = new THREE.Group(); this.view.add(this.gunHolder);
+    this.heldHolder = new THREE.Group(); this.view.add(this.heldHolder); this.heldId = null; this.packHidden = false; this.packFloor = null;
     this.flash = new THREE.PointLight(0xffc880, 0, 12, 2); this.view.add(this.flash); this.flash.position.set(0.2, -0.1, -1);
     this.beam = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1, 6), new THREE.MeshBasicMaterial({ color: 0x66f0ff })); this.beam.visible = false;
     this.mark = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffdd88, transparent: true, opacity: 0.8 }));
@@ -69,10 +70,12 @@ export class Player {
     // ------------- focus & aim state -------------
     const wantFocus = hasInput && In.down.focus; this.focus = damp(this.focus, wantFocus ? 1 : 0, 9, dt);
     const wantAim = hasInput && In.down.aim && !wantFocus;
+    if (wantAim && G.held && !G.hand) { const left = addItem(G.held.id, G.held.n || 1); G.held = left ? { ...G.held, n: left } : null; }   // aiming puts what you're holding away
     if (wantAim && !G.hand && !this.reloading) { if (quickPull()) { sfx('zip', 0.6); this.holsterT = 0; } }
     this.aim = damp(this.aim, wantAim && G.hand ? 1 : 0, 12, dt);
     if (G.quickDrawn && G.hand && !wantAim && !In.down.fire) { this.holsterT += dt; if (this.holsterT > 3) { stowHand(); sfx('zip', 0.4); } } else if (wantAim) this.holsterT = 0;
-    if (hasInput && In.pressed.holster) { if (G.hand) { stowHand(); sfx('zip', 0.5); } else if (quickPull()) sfx('zip', 0.5); }
+    if (hasInput && In.pressed.holster && G.held) { const left = addItem(G.held.id, G.held.n || 1); G.held = left ? { ...G.held, n: left } : null; sfx('zip', 0.4); }
+    else if (hasInput && In.pressed.holster) { if (G.hand) { stowHand(); sfx('zip', 0.5); } else if (quickPull()) sfx('zip', 0.5); }
     if (hasInput && In.pressed.view) this.thirdPerson = !this.thirdPerson;
     // ------------- look -------------
     const sens = 0.0022 * (1 - this.aim * 0.4) * (1 - this.focus * 0.45);
@@ -310,7 +313,7 @@ export class Player {
   updateViewmodel(dt, speed, p) {
     const g = G.hand; const id = g ? g.id : null;
     if (id !== this.holdId) { this.gunHolder.clear(); this.holdId = id; if (id) { const m = gunMesh(id); this.gunHolder.add(m); this.gunMesh = m; } else this.gunMesh = null; this.drawT = 0; }
-    this.view.visible = this.tp < 0.3 && this.packT < 0.3;
+    this.view.visible = this.tp < 0.3;
     this.gunUpT = Math.max(0, this.gunUpT - dt);
     const wantUp = (this.aim > 0.2 || this.gunUpT > 0 || this.reloading) ? 1 : 0; this.gunUp = damp(this.gunUp, wantUp, 7, dt);
     const bob = Math.min(1, this.bobAmt) * (1 - this.aim * 0.7);
@@ -333,6 +336,7 @@ export class Player {
       this.gunHolder.position.set(0, -2, 0);
       hL = new THREE.Vector3(-0.27 + sx, -0.62 + sy + bobY, -0.1); hR = new THREE.Vector3(0.27 + sx, -0.62 + sy - bobY, -0.1);
       if (this.beam.visible) hR = new THREE.Vector3(0.2, -0.26, -0.42);
+      if (G.held) { hR = new THREE.Vector3(0.16 + sx, -0.27 + sy + bobY, -0.4); hL = new THREE.Vector3(-0.27 + sx, -0.62 + sy, -0.1); }
       hL.z += Math.sin(p) * 0.02 * bob; hR.z -= Math.sin(p) * 0.02 * bob;
     }
     const place = (arm, a, h, left) => {
@@ -340,6 +344,9 @@ export class Player {
       arm.hand.position.copy(h); arm.hand.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), d.clone().setY(d.y * 0.6).normalize()); arm.hand.rotation.z += left ? -0.2 : 0.2;
     };
     place(this.armR, aR, hR, false); place(this.armL, aL, hL, true);
+    const hid = G.held ? G.held.id : null;
+    if (hid !== this.heldId) { this.heldHolder.clear(); this.heldId = hid; if (hid) { const m = itemMesh(hid); m.scale.setScalar(2.2); this.heldHolder.add(m); } }
+    this.heldHolder.visible = !!hid; if (hid) { this.heldHolder.position.copy(hR).add(new THREE.Vector3(0, 0.03, -0.02)); this.heldHolder.rotation.set(-0.5, 0.5 + Math.sin(G.time * 0.6) * 0.08, 0); }
   }
 
   updateBody(dt, speed) {
@@ -354,11 +361,12 @@ export class Player {
     else if (!gun && this.bodyGunMesh) { this.bodyGunMesh.parent && this.bodyGunMesh.parent.remove(this.bodyGunMesh); this.bodyGunMesh = null; this.bodyGunId = null; }
     // the backpack: on the shoulder, or lowered to the floor in front of you
     this.pack3.visible = this.packT < 0.04; this.syncPack3();
-    const pm = this.packMesh; pm.visible = this.packT > 0.02;
-    if (pm.visible) {
+    const pm = this.packMesh; pm.visible = this.packT > 0.02 && !this.packHidden;
+    if (this.packT > 0.02) {
       const t = this.packT, e = t * t * (3 - 2 * t); const f = new THREE.Vector3(-Math.sin(this.bodyYaw), 0, -Math.cos(this.bodyYaw)), rt = new THREE.Vector3(Math.cos(this.bodyYaw), 0, -Math.sin(this.bodyYaw));
       const from = new THREE.Vector3(this.pos.x, this.pos.y + 1.2, this.pos.z).addScaledVector(f, -0.22); const gy = this.surf.heightAt(this.pos.x + f.x, this.pos.z + f.z);
       const to = new THREE.Vector3(this.pos.x, Math.max(gy, this.pos.y) + 0.2, this.pos.z).addScaledVector(f, 0.95).addScaledVector(rt, 0.1);
+      this.packFloor = { x: to.x, y: Math.max(gy, this.pos.y) + 0.02, z: to.z, yaw: this.bodyYaw };
       pm.position.copy(from).lerp(to, e); pm.position.y += Math.sin(e * Math.PI) * 0.5; pm.rotation.set(-Math.PI / 2 * e, this.bodyYaw + (1 - e) * 0.0, 0, 'YXZ');
     }
     for (let i = this.impacts.length - 1; i >= 0; i--) { const im = this.impacts[i]; im.t -= dt; im.m.material.opacity = im.t * 4; if (im.t <= 0) { this.scene.remove(im.m); this.impacts.splice(i, 1); } }
