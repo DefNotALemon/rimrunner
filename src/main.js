@@ -18,6 +18,7 @@ import { Extraction } from './extract-ui.js';
 import { pickContract } from './ships.js';
 import { ITEMS } from './data.js';
 import { fmt, clamp } from './util.js';
+import { auditScene } from './audit.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
@@ -64,6 +65,15 @@ const atmo = new Atmo(camera, surf, {
   landed: (x, z, yaw, pad) => { surf.parkShip(x, z, yaw, !!pad); mode = 'foot'; player.place(surf.scene, surf); const c = Math.cos(yaw), s = Math.sin(yaw); player.teleport(x + 14 * c + 4 * s, z - 14 * s + 4 * c, -Math.PI / 2); ui.setHint('foot'); player.view.visible = true; save(); },
 });
 R.atmo = atmo;
+// audit hooks (read-only): __rr.audit() reports glitch classes for the scene currently shown; __rr.go('space'|'atmo'|'foot'|'jail') jumps modes for testing
+R.curScene = () => mode === 'space' ? space.scene : mode === 'atmo' || mode === 'foot' ? surf.scene : mode === 'jail' ? jail.scene : mode === 'extract' ? xs.scene : titleSpace ? titleSpace.scene : null;
+R.audit = (sc) => auditScene(sc || R.curScene(), camera, renderer, mode);
+R.go = (m) => {
+  if (m === 'space') { sys = sys || systemAt(G.seed, G.sysIndex || 0); if (mode === 'atmo') atmo.detach(); space.enter(sys, { planetIndex: 0 }); mode = 'space'; started = true; ui.setHint('space'); player.view.visible = false; }
+  else if (m === 'atmo') { sys = sys || systemAt(G.seed, 0); const pl = sys.planets.find(p => p.air > 0.3) || sys.planets[0]; space.enter(sys, { planetIndex: 0 }); planetNow = pl; surf.enter(pl, sys); atmo.enterFromSpace(space.forward(), new THREE.Vector3(0, 1, 0)); mode = 'atmo'; started = true; player.view.visible = false; }
+  else if (m === 'foot') { enterSurface(planetNow || (sys = sys || systemAt(G.seed, 0)).planets[0], sys); }
+  return mode;
+};
 
 // ---------- transitions ----------
 function fadeTo(fn, ms = 450) {
