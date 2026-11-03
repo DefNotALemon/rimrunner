@@ -1,5 +1,5 @@
 // Extraction mode: hub (between-ship screen), in-run HUD, and the run controller.
-import { G, toast, addItem, count, removeItem, lvl } from './state.js';
+import { G, toast, addItem, count, removeItem, lvl, uid } from './state.js';
 import { ITEMS, GUN } from './data.js';
 import { In } from './input.js';
 import { sfx } from './audio.js';
@@ -106,18 +106,25 @@ export class Extraction {
       case 'xconsole': if (S.medic) toast(S.medic.here ? 'The medic is waiting at your hatch.' : `Medic ETA ${mmss(S.medic.t)}.`, ''); else if (Meta.credits < 150) toast('A medic run costs 150 cr from your bank.', 'warn'); else { Meta.credits -= 150; metaSave(); S.medic = { t: 40, here: false }; toast('Medic called: ETA 0:40. Be at your hatch. −150 cr.', 'good'); } break;
       case 'xmedic': G.hp = 100; S.stunT = 0; toast('Patched up. Back to work.', 'good'); sfx('good', 0.8); break;
       case 'xloot': this.loot(it.data, it); break;
+      case 'xsalvage': this.salvage(it.data, it); break;
       case 'xvault': this.vault(it.data, it); break;
     }
   }
+  entriesOf(ids) { return ids.map(id => ITEMS[id].kind === 'gun' ? { id, q: 1, uid: uid(), mag: GUN[ITEMS[id].gun].mag } : { id, n: 1 }); }
+  // searching pulls your bag out in front of you with the contents laid beside it
+  openTray(title, entries, onClose) { this.app.openLoot({ title, items: entries, onClose }); }
   loot(c, it) {
     if (c.opened) return; const { S, app } = this;
     const open = () => {
-      c.opened = true; c.led.material.color.setHex(0x333840); const got = [], left = [];
-      for (const id of c.items) { const nm = ITEMS[id].name; const rest = addItem(id, 1); if (rest > 0) left.push(id); else got.push(nm); }
-      if (left.length) { c.items = left; c.opened = false; toast(`Pack full — left ${left.map(i => ITEMS[i].name).join(', ')}.`, 'warn'); } else { S.interactables = S.interactables.filter(x => x !== it); S.opened++; }
-      if (got.length) { toast('Found: ' + got.join(', '), 'good'); sfx('coin', 0.7); }
+      if (!c.entries) c.entries = this.entriesOf(c.items);
+      this.openTray(it.label, c.entries, rest => { c.entries = rest; if (!rest.length) { c.opened = true; c.led.material.color.setHex(0x333840); S.interactables = S.interactables.filter(x => x !== it); S.opened++; } });
     };
-    if (c.locked) { app.ui.lockpick(lvl('lockpick'), ok => { if (ok) { c.locked = false; open(); } else { toast('The pick snapped.', 'warn'); S.alertAround(c.x, c.z, 10); } }); } else open();
+    if (c.locked) { app.ui.lockpick(lvl('lockpick'), ok => { if (ok) { c.locked = false; c.led.material.color.setHex(0x55ff88); open(); } else { toast('The pick snapped.', 'warn'); S.alertAround(c.x, c.z, 10); } }); } else open();
+  }
+  salvage(e, it) {
+    const { S } = this; if (e.salv.opened) return; const sv = e.salv;
+    S.exposeInnards(e); if (!sv.entries) sv.entries = this.entriesOf(sv.ids);
+    this.openTray(it.label, sv.entries, rest => { sv.entries = rest; if (!rest.length) { sv.opened = true; S.interactables = S.interactables.filter(x => x !== it); } });
   }
   vault(vd, it) {
     const { S, app } = this; if (vd.open) return;

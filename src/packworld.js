@@ -1,7 +1,7 @@
 // The physical backpack: pulled off the shoulder, set on the floor, unzipped. Every item is a real 3D object in a real slot.
 // Look at one and press USE to hold it. No menus.
 import * as THREE from '../vendor/three.module.js';
-import { ITEMS, GUN, PACK_SLOTS, PACK_NAMES } from './data.js';
+import { ITEMS, GUN, PACK_SLOTS, PACK_NAMES, describe } from './data.js';
 import { G, toast, addItem, addGun, removeItem, canHolster, isGun, isSmall, upgradePack, itemValue, stowHand, uid } from './state.js';
 import { itemMesh, gunMesh } from './models.js';
 import { In } from './input.js';
@@ -34,8 +34,8 @@ export class PackWorld {
     this.camera = camera; this.hooks = hooks; this.phase = 'idle'; this.group = new THREE.Group(); this.group.visible = false; this.t = 0; this.items = []; this.pads = []; this.sig = '';
     this.ray = new THREE.Raycaster(); this.ray.far = 4; this.hover = null; this.prompt = '';
     this.ring = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.005, 6, 28), new THREE.MeshBasicMaterial({ color: 0x66f0ff, depthTest: false, transparent: true })); this.ring.rotation.x = -Math.PI / 2; this.ring.renderOrder = 20; this.ring.visible = false;
-    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128; this.labelCv = cv; this.labelTex = new THREE.CanvasTexture(cv); this.labelTex.colorSpace = THREE.SRGBColorSpace;
-    this.label = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.labelTex, depthTest: false, transparent: true })); this.label.scale.set(0.5, 0.125, 1); this.label.renderOrder = 21; this.label.visible = false;
+    const cv = document.createElement('canvas'); cv.width = 640; cv.height = 240; this.labelCv = cv; this.labelTex = new THREE.CanvasTexture(cv); this.labelTex.colorSpace = THREE.SRGBColorSpace;
+    this.label = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.labelTex, depthTest: false, transparent: true })); this.label.scale.set(0.62, 0.2325, 1); this.lootCtx = null; this.lootSlots = []; this.label.renderOrder = 21; this.label.visible = false;
   }
   attach(scene) { scene.add(this.group, this.ring, this.label); this.scene = scene; }
   get blocking() { return this.phase !== 'idle'; }
@@ -85,6 +85,17 @@ export class PackWorld {
     // pocket tray hit area
     this.trayHit = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.14, 0.56), HIT); this.trayHit.position.set(0, 0.1, 0); this.trayHit.userData = { dst: { t: 'pocket' }, flap: 'tray' }; this.group.add(this.trayHit); this.pads.push(this.trayHit);
     this.itemRoot = new THREE.Group(); this.group.add(this.itemRoot); this.sig = ''; this.setOpenAmt(0);
+    // loot tray: whatever you're searching is laid out beside the bag as real objects
+    this.lootSlots = []; if (this.lootCtx) {
+      const L = this.lootCtx, tray = new THREE.Group(); tray.position.set(-1.12, 0, 0.0); this.group.add(tray); this.lootAnchor = tray;
+      const n = L.items.length, cols = Math.min(3, Math.max(2, n)), rows = Math.ceil(n / cols);
+      add(new THREE.BoxGeometry(0.2 + cols * 0.15, 0.03, 0.2 + rows * 0.15), dark, 0, 0.015, 0, tray); add(new THREE.BoxGeometry(0.12 + cols * 0.15, 0.012, 0.12 + rows * 0.15), leather(0x3a2c1c), 0, 0.036, 0, tray);
+      for (let i = 0; i < n; i++) {
+        const c = i % cols, r = Math.floor(i / cols), px = (c - (cols - 1) / 2) * 0.15, pz = (r - (rows - 1) / 2) * 0.15;
+        add(new THREE.BoxGeometry(0.12, 0.004, 0.12), leather(0x20150c), px, 0.044, pz, tray);
+        const hit = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.16, 0.13), HIT); hit.position.set(px, 0.12, pz); hit.userData = { dst: { t: 'loot', i }, flap: 'loot' }; tray.add(hit); this.pads.push(hit); this.lootSlots.push({ px, pz });
+      }
+    }
   }
   openAmt(name) { const t = this.t; const ofs = { upper: 0.28, lower: 0.34, back: 0.5 }[name]; return Math.min(1, Math.max(0, (t - ofs) / 0.32)); }
   setOpenAmt() {
@@ -98,7 +109,7 @@ export class PackWorld {
 
   // ------ items as physical objects ------
   refreshItems() {
-    const P = G.pack; const sig = JSON.stringify([P.front, P.back, P.sides, P.pocket, P.tier, HAND.v && HAND.v.id]); if (sig === this.sig) return; this.sig = sig;
+    const P = G.pack; const sig = JSON.stringify([P.front, P.back, P.sides, P.pocket, P.tier, HAND.v && HAND.v.id, this.lootCtx && this.lootCtx.items]); if (sig === this.sig) return; this.sig = sig;
     for (const it of this.items) it.parent && it.parent.remove(it); this.items = []; this.clusterHits && this.clusterHits.forEach(h => { h.parent && h.parent.remove(h); const k = this.pads.indexOf(h); if (k >= 0) this.pads.splice(k, 1); }); this.clusterHits = [];
     const place = (entry, parent, x, z, rot = 0, big = false) => {
       const g = new THREE.Group(); g.position.set(x, 0.01, z); parent.add(g); this.items.push(g);
@@ -110,6 +121,7 @@ export class PackWorld {
       const face = f.userData.name === 'back' ? 'back' : 'front'; const idx = f.userData.name === 'lower' ? s.dstIndex : s.dstIndex; const e = P[face][idx]; if (!e) continue;
       place(e, f.userData.anchor, s.px, s.pz);
     }
+    if (this.lootCtx && this.lootAnchor) this.lootCtx.items.forEach((e, i) => { if (!e || !this.lootSlots[i]) return; const g = place(e, this.lootAnchor, this.lootSlots[i].px, this.lootSlots[i].pz); g.position.y = 0.05; });
     P.sides.forEach((g, i) => { if (!g) return; const it = place(g, this.group, this.sideAnchors[i].x, this.sideAnchors[i].z, Math.PI, true); it.position.y = this.sideAnchors[i].y - 0.04; it.userData.side = true; });
     // pocket pile
     const ids = Object.entries(P.pocket).filter(([, c]) => c > 0); const cols = 5;
@@ -121,6 +133,7 @@ export class PackWorld {
   }
 
   // ------ state machine ------
+  openLoot(ctx, player) { this.lootCtx = ctx; this.sig = ''; if (this.phase === 'idle') this.begin(player); }
   begin(player) { if (this.phase !== 'idle') return; this.phase = 'lowering'; player.packOpen = true; sfx('zip', 0.7); G.packWorldOpen = true; }
   requestClose() { if (this.phase === 'open' || this.phase === 'opening') { this.phase = 'closing'; sfx('zip', 0.7); } else if (this.phase === 'lowering') this.phase = 'lifting'; }
   update(dt, player, ctx) {
@@ -130,7 +143,7 @@ export class PackWorld {
     else if (this.phase === 'opening') { this.t = Math.min(1, this.t + dt / 1.5); this.setOpenAmt(); if (this.t >= 1) this.phase = 'open'; this.hoverCheck(player, false); }
     else if (this.phase === 'open') { this.refreshItems(); this.hoverCheck(player, true); this.act(player, ctx); }
     else if (this.phase === 'closing') { this.t = Math.max(0, this.t - dt / 1.1); this.setOpenAmt(); this.ring.visible = this.label.visible = false; if (this.t <= 0) { this.group.visible = false; player.packHidden = false; this.phase = 'lifting'; player.packOpen = false; this.pickupAnim = 0; } }
-    else if (this.phase === 'lifting') { player.packOpen = false; if (player.packT <= 0.02) { this.phase = 'idle'; G.packWorldOpen = false; } }
+    else if (this.phase === 'lifting') { player.packOpen = false; if (player.packT <= 0.02) { this.phase = 'idle'; G.packWorldOpen = false; if (this.lootCtx) { const L = this.lootCtx; this.lootCtx = null; this.lootSlots = []; L.onClose && L.onClose(L.items.filter(Boolean)); } } }
     if (this.group.visible && this.phase !== 'closing') this.group.updateMatrixWorld(true);
   }
 
@@ -138,35 +151,41 @@ export class PackWorld {
   hoverCheck(player, live) {
     this.hover = null; this.ring.visible = false; this.label.visible = false; if (!live) return;
     this.ray.setFromCamera({ x: 0, y: 0 }, this.camera); const hits = this.ray.intersectObjects(this.pads, false);
-    const ok = hits.filter(h => { const fl = h.object.userData.flap; return fl === 'tray' ? this.openAmt('lower') > 0.95 && this.openAmt('upper') > 0.95 : fl === 'left' ? true : fl === 'wing' ? this.openAmt('back') > 0.95 : this.openAmt(fl) > 0.95; });
+    const ok = hits.filter(h => { const fl = h.object.userData.flap; return fl === 'loot' ? true : fl === 'tray' ? this.openAmt('lower') > 0.95 && this.openAmt('upper') > 0.95 : fl === 'left' ? true : fl === 'wing' ? this.openAmt('back') > 0.95 : this.openAmt(fl) > 0.95; });
     if (!ok.length) return;
     // prefer pocket clusters over the tray, and slots over everything beneath them
     ok.sort((a, b) => a.distance - b.distance + ((a.object.userData.dst.t === 'pocket' && !a.object.userData.dst.id) ? 0.05 : 0) - ((b.object.userData.dst.t === 'pocket' && !b.object.userData.dst.id) ? 0.05 : 0));
     const h = ok[0]; const dst = h.object.userData.dst; const world = h.object.getWorldPosition(V()); this.hover = { dst, pos: world, obj: h.object };
     const P = G.pack; let entry = null;
-    if (dst.t === 'slot') entry = P[dst.face][dst.i]; else if (dst.t === 'side') entry = P.sides[dst.i]; else if (dst.t === 'pocket' && dst.id) entry = { id: dst.id, n: P.pocket[dst.id] };
+    if (dst.t === 'slot') entry = P[dst.face][dst.i]; else if (dst.t === 'side') entry = P.sides[dst.i]; else if (dst.t === 'pocket' && dst.id) entry = { id: dst.id, n: P.pocket[dst.id] }; else if (dst.t === 'loot') entry = this.lootCtx.items[dst.i];
     this.hover.entry = entry; const hand = HAND.v;
-    let l1 = '', l2 = '', col = 0x66f0ff;
+    let l1 = '', l2 = '', col = 0x66f0ff, l3 = '';
     const L = a => In.label(a);
     if (entry) {
-      const it = ITEMS[entry.id]; l1 = it.name + (entry.uid ? ` (${((entry.q || 1) * 100) | 0}%)` : ` ×${entry.n}`); l2 = hand ? `[${L('interact')}] swap with hand` : `[${L('interact')}] hold${it.use ? ` · [${L('use')}] ${entry.id === 'pack_frame' ? 'install' : 'use'}` : ''}`;
+      const it = ITEMS[entry.id]; l1 = it.name + (entry.uid ? ` (${((entry.q || 1) * 100) | 0}%)` : (entry.n > 1 ? ` ×${entry.n}` : '')); l3 = describe(entry.id); l2 = hand ? `[${L('interact')}] swap with hand` : `[${L('interact')}] hold${it.use ? ` · [${L('use')}] ${entry.id === 'pack_frame' ? 'install' : 'use'}` : ''}`;
       if (!hand && !entry.uid && entry.n > 1) l2 += ` · [${L('sprint')}+${L('interact')}] all`;
     } else if (hand) { l1 = `Put ${ITEMS[hand.id].name} here`; l2 = `[${L('interact')}] place`; col = 0x7dff8a; if (!this.fits(hand, dst)) { l2 = 'does not fit here'; col = 0xff6a5a; } }
-    else { l1 = dst.t === 'pocket' ? 'Front pocket' : dst.t === 'side' ? 'Side mount' : 'Empty slot'; l2 = ''; col = 0x889099; }
+    else { l1 = dst.t === 'pocket' ? 'Front pocket' : dst.t === 'side' ? 'Side mount' : dst.t === 'loot' ? 'Empty spot' : 'Empty slot'; l2 = ''; col = 0x889099; }
     this.ring.visible = true; this.ring.position.copy(world); this.ring.position.y = this.group.position.y + 0.13; this.ring.material.color.set(col);
     this.ring.scale.setScalar(dst.t === 'side' ? 1.4 : dst.t === 'pocket' && !dst.id ? 3.5 : 1); this.ring.rotation.z += 0.02;
-    this.drawLabel(l1, l2); this.label.position.copy(world); this.label.position.y = this.group.position.y + 0.34; this.label.visible = true;
+    this.drawLabel(l1, l2, l3); this.label.position.copy(world); this.label.position.y = this.group.position.y + 0.1; this.popT = Math.min(1, (this.popT ?? 0) + 0.12); const e = 1 - Math.pow(1 - this.popT, 3); this.label.position.y += 0.1 + 0.26 * e; this.label.scale.set(0.62 * (0.55 + 0.45 * e), 0.2325 * (0.55 + 0.45 * e), 1); this.label.visible = true;
     this.prompt = l1 ? `<b>${l1}</b> ${l2 ? '<small>' + l2 + '</small>' : ''}` : '';
+    if (this._lh !== (dst.t + (dst.i ?? dst.id ?? '') + (entry ? entry.id : ''))) { this._lh = dst.t + (dst.i ?? dst.id ?? '') + (entry ? entry.id : ''); this.popT = 0; }
   }
-  drawLabel(a, b) {
-    const key = a + '|' + b; if (key === this._lk) return; this._lk = key; const c = this.labelCv, x = c.getContext('2d'); x.clearRect(0, 0, 512, 128);
-    x.fillStyle = 'rgba(8,12,20,.78)'; x.beginPath(); x.roundRect(8, 8, 496, 112, 18); x.fill(); x.fillStyle = '#fff'; x.font = 'bold 44px sans-serif'; x.textAlign = 'center'; x.fillText(a, 256, 58);
-    x.fillStyle = '#ffd27a'; x.font = '28px sans-serif'; x.fillText(b, 256, 100); this.labelTex.needsUpdate = true;
+  drawLabel(a, b, desc = '') {
+    const key = a + '|' + b + '|' + desc; if (key === this._lk) return; this._lk = key; const c = this.labelCv, x = c.getContext('2d'); x.clearRect(0, 0, 640, 240);
+    x.fillStyle = 'rgba(8,12,20,.86)'; x.beginPath(); x.roundRect(8, 8, 624, 224, 20); x.fill(); x.strokeStyle = 'rgba(102,240,255,.55)'; x.lineWidth = 3; x.stroke();
+    x.fillStyle = '#fff'; x.font = 'bold 46px sans-serif'; x.textAlign = 'left'; x.fillText(a, 28, 62);
+    x.fillStyle = '#b9c7d8'; x.font = '29px sans-serif'; const words = desc.split(' '); let line = '', y = 108, lines = 0;
+    for (const w of words) { const t = line ? line + ' ' + w : w; if (x.measureText(t).width > 584 && line) { x.fillText(line, 28, y); y += 36; line = w; lines++; } else line = t; }
+    if (line) x.fillText(line, 28, y);
+    x.fillStyle = '#ffd27a'; x.font = '26px sans-serif'; x.fillText(b, 28, 216); this.labelTex.needsUpdate = true;
   }
 
   // ------ pick up / place / use ------
   fits(hand, dst) {
     const it = ITEMS[hand.id];
+    if (dst.t === 'loot') return true;
     if (dst.t === 'side') return !!hand.uid; if (dst.t === 'pocket') return !hand.uid && it.kind === 'small';
     if (dst.t === 'slot') { if (hand.uid) return canHolster(hand.id); return it.kind !== 'small'; } return false;
   }
@@ -202,11 +221,13 @@ export class PackWorld {
   }
   takeFrom(dst, cur, all) {
     const P = G.pack; sfx('ui', 0.6);
+    if (dst.t === 'loot') { const L = this.lootCtx; HAND.v = cur.uid ? cur : { id: cur.id, n: cur.n || 1, item: true }; L.items[dst.i] = null; G.quickDrawn = false; return; }
     if (cur.uid) { if (dst.t === 'side') { HAND.v = P.sides[dst.i]; P.sides[dst.i] = null; } else { HAND.v = P[dst.face][dst.i]; P[dst.face][dst.i] = null; } G.quickDrawn = false; return; }
     const n = all ? cur.n : 1; if (this.take(dst, n)) HAND.v = { id: cur.id, n, item: true };
   }
   putInto(dst, hand) {
     const P = G.pack; sfx('ui', 0.6);
+    if (dst.t === 'loot') { const L = this.lootCtx, e = L.items[dst.i]; if (!e) { L.items[dst.i] = hand; HAND.v = null; } else if (!hand.uid && !e.uid && e.id === hand.id) { e.n = (e.n || 1) + (hand.n || 1); HAND.v = null; } return; }
     if (hand.uid) { if (dst.t === 'side') { if (P.sides[dst.i]) return; P.sides[dst.i] = hand; HAND.v = null; } else if (dst.t === 'slot') { if (P[dst.face][dst.i]) return; P[dst.face][dst.i] = hand; HAND.v = null; } return; }
     if (dst.t === 'pocket') { addItem(hand.id, hand.n, P); HAND.v = null; return; }
     if (dst.t === 'slot') { const e = P[dst.face][dst.i]; const stack = ITEMS[hand.id].stack || 20; if (!e) { P[dst.face][dst.i] = { id: hand.id, n: Math.min(stack, hand.n) }; hand.n -= Math.min(stack, hand.n); } else if (e.id === hand.id) { const a = Math.min(stack - e.n, hand.n); e.n += a; hand.n -= a; } if (hand.n <= 0) HAND.v = null; }

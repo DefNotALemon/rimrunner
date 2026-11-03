@@ -23,6 +23,32 @@ const ROOM_CONT = {
   guardroom: ['locker', 'rack', 'drawer'], range: ['crate', 'case'], cellblock: ['case', 'drawer'], canteen: ['crate', 'locker'], evidence: ['safe', 'drawer', 'drawer', 'locker'],
 };
 
+const mixc = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
+// every room type has its own look; the corp palette is blended in so a Halcyon armory still reads as Halcyon
+const RS = {
+  serverhall: { wall: 0x5f7a99, dado: 0x1f2b3d, floor: 0x161d29, acc: 0x38a8ff, light: 0xbcdcff, fs: 'grate' },
+  control:    { wall: 0x3d4552, dado: 0x1c2028, floor: 0x181b22, acc: 0x44ffcc, light: 0x9fd8ff, fs: 'tile' },
+  cooling:    { wall: 0x5d8a90, dado: 0x1f4a52, floor: 0x1d3036, acc: 0x4ae8ff, light: 0xc4f6ff, fs: 'stripes' },
+  power:      { wall: 0x8a7a4a, dado: 0x3a3320, floor: 0x24211a, acc: 0xffd23f, light: 0xffeab0, fs: 'hazard' },
+  storage:    { wall: 0x7d776a, dado: 0x3f3a30, floor: 0x2c2a26, acc: 0xd8a24a, light: 0xffe2b8, fs: 'plain' },
+  crew:       { wall: 0xb09a7a, dado: 0x5a4636, floor: 0x3a2f28, acc: 0xff9a5a, light: 0xffd4a0, fs: 'carpet' },
+  lab:        { wall: 0xdfe8ec, dado: 0x8fa6b0, floor: 0x9aa8b0, acc: 0x7affd8, light: 0xf2fbff, fs: 'checker' },
+  vault:      { wall: 0x3a3d46, dado: 0x15171c, floor: 0x101216, acc: 0xff3b3b, light: 0xff9a8a, fs: 'hazard' },
+  evidence:   { wall: 0x4a4f58, dado: 0x1c1e24, floor: 0x14161a, acc: 0xffb030, light: 0xffe0a0, fs: 'hazard' },
+  tankhall:   { wall: 0x6f8a62, dado: 0x2f4a2a, floor: 0x26332a, acc: 0xb6ff3a, light: 0xe4ffc0, fs: 'stripes' },
+  chemlab:    { wall: 0xcfe0c0, dado: 0x6a8a5a, floor: 0x8fa088, acc: 0xff77cc, light: 0xf4ffe8, fs: 'checker' },
+  reactor:    { wall: 0x70483a, dado: 0x2c1a14, floor: 0x1e1512, acc: 0xff7a2a, light: 0xffb070, fs: 'grate' },
+  medbay:     { wall: 0xe8eef0, dado: 0x7ab0b8, floor: 0xc4d0d4, acc: 0x44d0ff, light: 0xffffff, fs: 'tile' },
+  assembly:   { wall: 0x8a8f94, dado: 0x4a4d52, floor: 0x2a2c30, acc: 0xffc020, light: 0xfff0c8, fs: 'hazard' },
+  foundry:    { wall: 0x5a3a30, dado: 0x2a1812, floor: 0x1a1210, acc: 0xff5a1a, light: 0xff9a60, fs: 'grate' },
+  office:     { wall: 0xa89478, dado: 0x6a5238, floor: 0x4a4038, acc: 0xffe0a0, light: 0xfff2d8, fs: 'carpet' },
+  armoryhall: { wall: 0x5f6a55, dado: 0x2e3528, floor: 0x24281f, acc: 0xff4a3a, light: 0xffe8d0, fs: 'plain' },
+  barracks:   { wall: 0x77806a, dado: 0x3a4032, floor: 0x2c3028, acc: 0xffb050, light: 0xffe4c0, fs: 'stripes' },
+  guardroom:  { wall: 0x56627a, dado: 0x242b3a, floor: 0x1e222c, acc: 0x4a8aff, light: 0xcadcff, fs: 'tile' },
+  range:      { wall: 0x6a6a64, dado: 0x2e2e2a, floor: 0x222220, acc: 0xff4a3a, light: 0xfff0e0, fs: 'stripes' },
+  cellblock:  { wall: 0x7c8088, dado: 0x3c4046, floor: 0x2a2d32, acc: 0xff8a2a, light: 0xdce4ff, fs: 'plain' },
+  canteen:    { wall: 0xd8d2c0, dado: 0xc0642a, floor: 0xb8b0a0, acc: 0xff9a3a, light: 0xfff0d0, fs: 'checker' },
+};
 export function buildShip(ship, S) {
   const r = rng(ship.seed ^ 0x77aa), corp = ship.corp, H = ship.H, W = ship.W;
   const bt = new Batch(); S.lamps = []; S.containers = []; S.doors = []; S.portDoors = [];
@@ -32,7 +58,8 @@ export function buildShip(ship, S) {
   const cylX = (kind, col, x0, x1, cy, cz, rad) => { _q.setFromEuler(new THREE.Euler(0, 0, Math.PI / 2)); _m.compose(_p.set((x0 + x1) / 2, cy, cz), _q, _s.set(rad, x1 - x0, rad)); bt.put(kind, UC, _m, col); };
   const cylZ = (kind, col, z0, z1, cy, cx, rad) => { _q.setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0)); _m.compose(_p.set(cx, cy, (z0 + z1) / 2), _q, _s.set(rad, z1 - z0, rad)); bt.put(kind, UC, _m, col); };
   const col = (x0, x1, z0, z1, h) => S.colliders.push({ minx: x0, maxx: x1, minz: z0, maxz: z1, maxy: h });
-  const lamp = (x, z, on = true) => { box(on ? 'emis' : 'matte', on ? corp.light : 0x1a1c20, x - 0.8, x + 0.8, H - 0.07, H, z - 0.22, z + 0.22); if (on) S.lamps.push({ x, z }); };
+  let curLight = corp.light;
+  const lamp = (x, z, on = true) => { box(on ? 'emis' : 'matte', on ? curLight : 0x1a1c20, x - 0.8, x + 0.8, H - 0.07, H, z - 0.22, z + 0.22); if (on) S.lamps.push({ x, z, tint: curLight }); };
 
   // ---------------- shell ----------------
   const ZL = ship.zlo, ZH = ship.zhi, E = ship.E;
@@ -94,8 +121,28 @@ export function buildShip(ship, S) {
 
   // ---------------- rooms ----------------
   for (const m of ship.rooms) {
-    const label = ROOM_LABEL[m.type] || m.type.toUpperCase();
-    box('matte', m.type === 'vault' || m.type === 'evidence' ? 0x2a2c33 : jit(corp.floor2, 0.12), m.x0, m.x1, 0, 0.012, m.z0, m.z1);
+    const rs = RS[m.type] || RS.storage, vr = (r() - 0.5) * 0.16;
+    const sh = c => { const k = new THREE.Color(c); const h = {}; k.getHSL(h); return k.setHSL((h.h + vr + 1) % 1, h.s, h.l).getHex(); };
+    const th = { wall: sh(mixc(rs.wall, corp.wall, 0.3)), dado: sh(mixc(rs.dado, corp.dado, 0.3)), floor: sh(mixc(rs.floor, corp.floor2, 0.25)), acc: mixc(rs.acc, corp.accent, 0.25), light: mixc(rs.light, corp.light, 0.25) };
+    curLight = th.light; m.theme = th;
+    const fl = (x0, x1, z0, z1, c, y1 = 0.012, y0 = 0) => box('matte', c, x0, x1, y0, y1, z0, z1);
+    fl(m.x0, m.x1, m.z0, m.z1, th.floor);
+    { const fs = rs.fs, c2 = new THREE.Color(th.floor).offsetHSL(0, 0, 0.07).getHex(), dim = new THREE.Color(th.acc).multiplyScalar(0.35).getHex();
+      if (fs === 'checker') for (let x = m.x0, i = 0; x < m.x1; x += 2, i++) for (let z = m.z0, j = 0; z < m.z1; z += 2, j++) { if ((i + j) & 1) fl(x, Math.min(m.x1, x + 2), z, Math.min(m.z1, z + 2), c2, 0.016, 0.012); }
+      else if (fs === 'stripes') for (let x = m.x0 + 1.2; x < m.x1 - 0.6; x += 2.4) fl(x, Math.min(m.x1, x + 1.2), m.z0, m.z1, c2, 0.016, 0.012);
+      else if (fs === 'grate') for (let x = m.x0 + 0.8; x < m.x1 - 0.4; x += 1.6) box('emis', dim, x, x + 0.08, 0.012, 0.02, m.z0 + 0.3, m.z1 - 0.3);
+      else if (fs === 'hazard') { const b = new THREE.Color(th.acc).multiplyScalar(0.5).getHex(); for (const [a, bb, c, d] of [[m.x0 + 0.3, m.x1 - 0.3, m.z0 + 0.3, m.z0 + 0.5], [m.x0 + 0.3, m.x1 - 0.3, m.z1 - 0.5, m.z1 - 0.3], [m.x0 + 0.3, m.x0 + 0.5, m.z0 + 0.3, m.z1 - 0.3], [m.x1 - 0.5, m.x1 - 0.3, m.z0 + 0.3, m.z1 - 0.3]]) fl(a, bb, c, d, b, 0.018, 0.012); }
+      else if (fs === 'carpet') fl(m.x0 + 0.9, m.x1 - 0.9, m.z0 + 0.9, m.z1 - 0.9, mixc(th.floor, th.acc, 0.14), 0.02, 0.012);
+      else if (fs === 'tile') { for (let x = m.x0 + 1; x < m.x1; x += 2) fl(x, x + 0.04, m.z0, m.z1, c2, 0.016, 0.012); } }
+    // paint the inside faces of this room's walls in its own colours
+    { const nC = ship.cors.length, face = { w: m.x0 === E ? 0.15 : 0.125, e: m.x1 === W - E ? 0.15 : 0.125, s: m.band === 0 ? 0.25 : 0.15, n: m.band === nC ? 0.25 : 0.15 }, t = 0.03;
+      const gapsOf = side => m.doors.filter(d => d.side === side).map(d => [d.u - 1.05, d.u + 1.05]);
+      const strip = (axis, at, a, b, gaps) => {
+        const bx = (c, s0, s1, y0, y1) => { if (s1 - s0 < 0.02) return; if (axis === 'x') box('matte', c, s0, s1, y0, y1, at, at + t * (at < (m.z0 + m.z1) / 2 ? 1 : -1)); else box('matte', c, at, at + t * (at < (m.x0 + m.x1) / 2 ? 1 : -1), y0, y1, s0, s1); };
+        const acc = new THREE.Color(th.acc).multiplyScalar(0.6).getHex();
+        const seg = (s0, s1) => { bx(th.dado, s0, s1, 0, 1.05); bx(th.wall, s0, s1, 1.05, H); bx(acc, s0, s1, 1.05, 1.1); bx(acc, s0, s1, 2.7, 2.76); };
+        let cur = a; for (const [g0, g1] of gaps.sort((p, q) => p[0] - q[0])) { seg(cur, g0); bx(th.wall, g0, g1, 2.4, H); cur = g1; } seg(cur, b); };
+      strip('x', m.z0 + face.s, m.x0, m.x1, gapsOf('s')); strip('x', m.z1 - face.n, m.x0, m.x1, gapsOf('n')); strip('z', m.x0 + face.w, m.z0, m.z1, []); strip('z', m.x1 - face.e, m.z0, m.z1, []); }
     // lanes (kept clear) + door zones
     const lanes = m.doors.map(d => [d.u - 1.25, d.u + 1.25, m.z0, m.z1]);
     const occ = [];
@@ -177,15 +224,14 @@ export function buildShip(ship, S) {
         } break;
       }
     }
+    // per-room extras so no two rooms read the same: wall screens, ceiling ducts, pillars
+    { const nScr = r.int(1, 3); for (let i = 0; i < nScr; i++) { const back = r() < 0.5, zf = back ? m.z1 - 0.2 : m.z0 + 0.2, x = r.range(m.x0 + 1.4, m.x1 - 1.4); if (lanes.some(l => x > l[0] - 0.9 && x < l[1] + 0.9)) continue; const w = r.range(0.8, 1.6); box('metal', 0x15171a, x - w / 2 - 0.05, x + w / 2 + 0.05, 1.45, 2.05, back ? zf - 0.02 : zf - 0.02, back ? zf + 0.02 : zf + 0.02); box('emis', new THREE.Color(th.acc).multiplyScalar(r.range(0.5, 0.9)).getHex(), x - w / 2, x + w / 2, 1.5, 2.0, back ? zf - 0.04 : zf + 0.0, back ? zf - 0.0 : zf + 0.04); }
+      if (r() < 0.6) { const zz = r.range(m.z0 + 1.4, m.z1 - 1.4); cylX('metal', mixc(th.dado, 0x888888, 0.4), m.x0 + 0.3, m.x1 - 0.3, H - 0.4, zz, r.range(0.1, 0.22)); if (r() < 0.5) cylX('metal', th.acc, m.x0 + 0.3, m.x1 - 0.3, H - 0.65, zz + 0.4, 0.06); }
+      if (m.x1 - m.x0 > 13 && !['serverhall', 'tankhall', 'cellblock', 'vault', 'evidence'].includes(m.type) && r() < 0.6) for (const fx of [0.3, 0.7]) prop(m.x0 + (m.x1 - m.x0) * fx, (m.z0 + m.z1) / 2 + r.range(-2, 2), 0.55, 0.55, H, (x, z) => { box('metal', mixc(th.dado, 0x777777, 0.3), x - 0.27, x + 0.27, 0, H, z - 0.27, z + 0.27); box('emis', new THREE.Color(th.acc).multiplyScalar(0.6).getHex(), x - 0.28, x + 0.28, 1.0, 1.06, z - 0.28, z + 0.28); }); }
     // ceiling light panels
     const nl = Math.max(1, Math.round((m.x1 - m.x0) / 7)); for (let i = 0; i < nl; i++) lamp(m.x0 + (i + 0.5) * (m.x1 - m.x0) / nl, (m.z0 + m.z1) / 2, r() > (isVault(m.type) ? 0.35 : 0.14));
     // spots for enemies
     m.spots = []; for (let t = 0; t < 60 && m.spots.length < 8; t++) { const x = r.range(m.x0 + 1.2, m.x1 - 1.2), z = r.range(m.z0 + 1.2, m.z1 - 1.2); if (isFree(x - 0.4, x + 0.4, z - 0.4, z + 0.4, 0.2)) m.spots.push({ x, z }); }
-    // doors: room sign on the corridor side
-    if (m.x1 - m.x0 >= 9) for (const d of m.doors) {
-      const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.4), new THREE.MeshBasicMaterial({ map: signTex(label, 384, 90, corp.sign[0], corp.sign[1]) }));
-      sg.position.set(d.u, 2.62, d.z + (d.side === 's' ? -0.18 : 0.18)); sg.rotation.y = d.side === 's' ? Math.PI : 0; S.root.add(sg);
-    }
     // vault doors are sealed until cracked
     if (isVault(m.type)) for (const d of m.doors) {
       const zc = d.z; const slab = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.4, 0.22), new THREE.MeshStandardMaterial({ color: 0x3a3e46, metalness: 0.85, roughness: 0.3, emissive: 0x300808 })); slab.position.set(d.u, 1.2, zc); S.root.add(slab);

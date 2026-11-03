@@ -39,7 +39,7 @@ export function makeOffers() {
 // ---------------------------------------------------------------- enemies ----------------------------------------------------------------
 // Everything data-defined: add a row and a variant exists. weapon.kind: gun | taser | rocket.
 export const ENEMY = {
-  drone:    { name: 'Taser Drone', fly: true, hp: 42, armor: 0, speed: 5.4, prefer: 6, sight: 24, color: 0xc9d0d8, glow: 0x55c8ff, weapon: { kind: 'taser', dmg: 6, stun: 1.4, rate: 2.6, range: 13, acc: 0.8 } },
+  drone:    { name: 'Taser Drone', fly: true, hp: 42, armor: 0, speed: 5.4, prefer: 3.2, sight: 20, color: 0xc9d0d8, glow: 0x55c8ff, weapon: { kind: 'taser', dmg: 6, stun: 1.4, rate: 2.6, range: 4.6, acc: 0.9, wind: 0.55 } },
   walker:   { name: 'Security Walker', hp: 130, armor: 0.35, speed: 2.7, prefer: 13, sight: 26, color: 0x5a6068, glow: 0xff3b3b, weapon: { kind: 'gun', dmg: 9, rate: 0.5, burst: 3, gap: 2.0, range: 40, acc: 0.55 } },
   lmg:      { name: 'LMG Walker', hp: 210, armor: 0.42, speed: 2.0, prefer: 14, sight: 26, size: 1.12, color: 0x4a4f56, glow: 0xff7a1a, weapon: { kind: 'gun', dmg: 5, rate: 0.09, burst: 15, gap: 2.4, range: 36, acc: 0.38 } },
   wrist:    { name: 'Wristgun Runner', hp: 85, armor: 0.2, speed: 4.4, prefer: 7, sight: 24, size: 0.92, color: 0x6a5a58, glow: 0xffd23f, weapon: { kind: 'gun', dmg: 6, rate: 0.22, burst: 4, gap: 1.2, range: 18, acc: 0.6 } },
@@ -56,10 +56,17 @@ export function nutjob(r) {
   return { ...base, name: r.pick(NUT_NAMES), nut: true, hp: Math.round(base.hp * r.range(0.8, 1.6)), speed: base.speed * r.range(0.8, 1.7), size: r.range(0.9, 1.25), color: r.pick([0xa23ad8, 0xd8a23a, 0x3ad8a2, 0xd83a6a]), glow: 0xffffff, weapon: w, sight: 30 };
 }
 
+let _board = null;
+function boardMat() {
+  if (_board) return _board; const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#0d5c3a'; x.fillRect(0, 0, 128, 128);
+  x.strokeStyle = '#d8b040'; x.lineWidth = 2; for (let i = 0; i < 26; i++) { x.beginPath(); let px = Math.random() * 128, py = Math.random() * 128; x.moveTo(px, py); for (let k = 0; k < 4; k++) { if (Math.random() < 0.5) px += (Math.random() - 0.5) * 70; else py += (Math.random() - 0.5) * 70; x.lineTo(px, py); } x.stroke(); }
+  x.fillStyle = '#e8c860'; for (let i = 0; i < 30; i++) x.fillRect(Math.random() * 124, Math.random() * 124, 4, 4); x.fillStyle = '#16171b'; for (let i = 0; i < 4; i++) x.fillRect(Math.random() * 90, Math.random() * 90, 22 + Math.random() * 12, 14);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return _board = new THREE.MeshStandardMaterial({ map: t, roughness: 0.5, metalness: 0.3 });
+}
 const MAT = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.65, roughness: 0.4, ...o });
 function droneMesh(d) {
-  const g = new THREE.Group(), body = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 10), MAT(d.color)); body.position.y = 1.0; body.scale.set(1, 0.75, 1.1); g.add(body);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.03, 6, 20), new THREE.MeshBasicMaterial({ color: d.glow })); ring.rotation.x = Math.PI / 2; ring.position.y = 1.0; g.add(ring);
+  const g = new THREE.Group(), body = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 10), MAT(d.color)); body.position.y = 1.0; body.scale.set(1, 0.75, 1.1); g.add(body); g.userData.body = body;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.03, 6, 20), new THREE.MeshBasicMaterial({ color: d.glow })); ring.rotation.x = Math.PI / 2; ring.position.y = 1.0; g.add(ring); g.userData.ring = ring;
   const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: d.glow })); eye.position.set(0, 1.0, -0.28); g.add(eye);
   g.userData.rotors = [];
   for (const [x, z] of [[0.38, 0.38], [-0.38, 0.38], [0.38, -0.38], [-0.38, -0.38]]) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.015, 12), new THREE.MeshBasicMaterial({ color: 0x9fb4c8, transparent: true, opacity: 0.45 })); r.position.set(x, 1.12, z); g.add(r); g.userData.rotors.push(r); }
@@ -88,7 +95,7 @@ export class ExtractShip extends Surface {
     this.hooks = hooks; this.contract = contract; const ship = this.ship = generateShip(contract); this.r = rng(contract.seed ^ 0x5eed);
     this.planet = { name: contract.name, kind: 'derelict', settled: false, temp: 0.5, air: 1, g: 1, seed: contract.seed, i: 0 }; this.kind = 'barren'; this.sys = { name: '—' };
     this.K = { res: [], sky: 0 }; this.air = 1; this.gravity = 1; this.root.clear(); this.colliders = []; this.interactables = []; this.npcs = []; this.nodes = []; this.pickups = []; this.buildings = [];
-    this.scene.remove(this.sky.mesh); this.scene.background = new THREE.Color(0x020306); this.scene.fog = new THREE.Fog(0x020306, 14, 120); this.sun.intensity = 0; this.hemi.intensity = 0.85; this.hemi.color.set(0x9fb0c8); this.hemi.groundColor.set(0x2a2d33);
+    this.scene.remove(this.sky.mesh); this.scene.background = new THREE.Color(0x020306); this.scene.fog = new THREE.Fog(0x020306, 14, 120); this.sun.intensity = 0; this.hemi.intensity = 0.6; this.hemi.color.set(0x9fb0c8); this.hemi.groundColor.set(0x2a2d33);
     this.padPos = V(1e4, 0, 1e4); this.flatR = 9999;
     if (!this.pool) { this.pool = []; for (let i = 0; i < 9; i++) { const l = new THREE.PointLight(0xffffff, 0, 22, 1.4); this.scene.add(l); this.pool.push(l); } }
     buildShip(ship, this);
@@ -148,11 +155,12 @@ export class ExtractShip extends Surface {
     if (e.hp <= 0) this.killEnemy(e);
   }
   killEnemy(e) {
-    e.dead = true; this.kills++; e.dieT = 0; sfx('good', 0.6);
+    e.dead = true; this.kills++; e.dieT = 0; e.settled = false; sfx('good', 0.6);
     const r = this.r, human = e.def.human; const pool = human ? ['ammo', 'ammo', 'medkit', 'stimpack', r() < 0.12 ? 'pulsepistol' : 'hpistol'] : ['servo', 'cell', 'circuit', 'servo', r() < 0.15 ? 'ai_core' : 'cell'];
-    const items = [r.pick(pool)]; if (r() < 0.4) items.push(r.pick(pool));
-    const c = makeContainer(this, { x: e.pos.x, z: e.pos.z, rot: r.range(0, 6), k: CONT.case, kindName: 'case' }, this.ship.corp, items, e.room); c.g.scale.setScalar(0.8); c.salvage = true; this.containers.push(c);
-    const it = this.interactables[this.interactables.length - 1]; it.label = `Salvage ${e.def.name}`;
+    const ids = [r.pick(pool)]; if (r() < 0.4) ids.push(r.pick(pool));
+    e.rag = { vy: 0.6, rx: (Math.random() - 0.5) * 1.8, rz: (Math.random() - 0.5) * 1.8, side: Math.random() < 0.5 ? 1 : -1, legs: [(Math.random() - 0.5) * 1.4, (Math.random() - 0.5) * 1.4], arm: (Math.random() - 0.5) * 2, ry: (Math.random() - 0.5) * 0.8 };
+    e.salv = { ids, opened: false }; e.mesh.rotation.y += e.rag.ry;
+    this.interactables.push({ pos: V(e.pos.x, 0.4, e.pos.z), r: 2.1, label: `${human ? 'Search' : 'Salvage'} ${e.def.name}`, act: 'xsalvage', data: e });
   }
   // ---------------- damage to the player ----------------
   hurt(player, dmg, kind = 'bullet') {
@@ -184,7 +192,7 @@ export class ExtractShip extends Surface {
     this.t += dt; this.stunT = Math.max(0, this.stunT - dt); G.hunger = G.thirst = 35; G.oxygen = 100;
     this.lampT -= dt; if (this.lampT <= 0) { this.lampT = 0.12; this.placeLights(player.pos); }
     for (const e of this.enemies) if (!e.dead) this.updateEnemy(e, dt, player);
-    for (const e of this.enemies) if (e.dead && e.mesh) this.deadAnim(e, dt);
+    for (const e of this.enemies) if (e.dead && e.mesh && !e.settled) this.deadAnim(e, dt);
     for (const p of this.proj) { p.life -= dt; p.m.position.addScaledVector(p.vel, dt); const px = p.m.position.x, pz = p.m.position.z; let hitW = false; for (const c of this.colliders) { if (px > c.minx && px < c.maxx && pz > c.minz && pz < c.maxz && p.m.position.y < (c.maxy ?? 9)) { hitW = true; break; } }
       const dp = Math.hypot(px - player.pos.x, p.m.position.y - (player.pos.y + 1), pz - player.pos.z); if (hitW || dp < 0.7 || p.life <= 0) { this.boom(p.m.position.clone(), p.splash, p.dmg, player); this.root.remove(p.m); p.dead = true; } }
     this.proj = this.proj.filter(p => !p.dead);
@@ -204,11 +212,45 @@ export class ExtractShip extends Surface {
   roomAt(x, z) { for (const m of this.ship.rooms) if (x > m.x0 && x < m.x1 && z > m.z0 && z < m.z1) return m; return null; }
   placeLights(p) {
     const L = this.lamps; const best = []; for (const l of L) { const d = (l.x - p.x) ** 2 + (l.z - p.z) ** 2; if (d < 900) best.push([d, l]); } best.sort((a, b) => a[0] - b[0]);
-    const storm = this.stormT > 0 && Math.random() < 0.3; this.pool.forEach((pl, i) => { const b = best[i]; if (!b) { pl.intensity = 0; return; } const l = b[1]; pl.position.set(l.x, 3.0, l.z); pl.color.set(l.tint || (l.warm ? 0xff9a50 : this.ship.corp.light)); pl.intensity = storm ? 3 : 24 * (this.alarm ? 0.8 + 0.4 * Math.sin(this.t * 6) : 1); });
+    const storm = this.stormT > 0 && Math.random() < 0.3; this.pool.forEach((pl, i) => { const b = best[i]; if (!b) { pl.intensity = 0; return; } const l = b[1]; pl.position.set(l.x, 3.0, l.z); pl.color.set(l.tint || (l.warm ? 0xff9a50 : this.ship.corp.light)); pl.intensity = storm ? 3 : 15 * (this.alarm ? 0.8 + 0.4 * Math.sin(this.t * 6) : 1); });
   }
+  // a wreck falls, bounces and then just lies there until somebody picks it apart
   deadAnim(e, dt) {
-    e.dieT += dt; if (e.def.fly) { e.pos.y = Math.max(0.1, e.pos.y - dt * 3); e.mesh.position.copy(e.pos); e.mesh.rotation.z += dt * 4; } else if (e.def.human) { animateHuman(e.mesh, { ko: true }); e.mesh.position.y = 0.12; } else { e.mesh.rotation.x = Math.max(-Math.PI / 2, e.mesh.rotation.x - dt * 3); if (e.def.size) e.mesh.position.y = Math.max(0.15, e.mesh.position.y - dt); }
-    if (e.mesh.userData.rotors) e.mesh.userData.rotors.forEach(r => r.visible = false);
+    if (e.settled) return; e.dieT += dt; const m = e.mesh, rg = e.rag;
+    if (e.def.human) { animateHuman(m, { ko: true }); m.position.y = 0.12; if (e.dieT > 0.6) e.settled = true; return; }
+    if (e.def.fly) {
+      rg.vy -= 9 * dt; e.pos.y += rg.vy * dt; if (e.pos.y <= 0.22) { e.pos.y = 0.22; if (Math.abs(rg.vy) > 1.2) { rg.vy *= -0.28; sfx('shot', 0.15); } else { rg.vy = 0; e.settled = true; } }
+      m.position.y = e.pos.y; const k = Math.min(1, dt * 7); m.rotation.x += (rg.rx - m.rotation.x) * k; m.rotation.z += (rg.rz - m.rotation.z) * k; return;
+    }
+    const k = Math.min(1, e.dieT / 0.5), ek = 1 - (1 - k) * (1 - k), s = e.def.size || 1; m.rotation.z = rg.side * (Math.PI / 2) * 0.96 * ek; m.position.y = 0.3 * s * ek; m.position.x = e.pos.x + rg.side * 0.62 * s * ek;
+    const L = m.userData.legs; if (L) { L[0].rotation.x = rg.legs[0] * ek; L[1].rotation.x = rg.legs[1] * ek; } if (m.userData.arm) m.userData.arm.rotation.x = rg.arm * ek;
+    if (k >= 1) e.settled = true;
+  }
+  // ---------------- salvage: crack the wreck open ----------------
+  exposeInnards(e) {
+    if (e.opened || e.def.human) return; e.opened = true; const g = e.mesh, ud = g.userData, add = (o, p = g) => { p.add(o); return o; };
+    const board = boardMat(), wireCols = [0xd83a3a, 0x3a7ad8, 0xe0c030, 0x3ad86a, 0xf0f0f0, 0xd87a1a], rnd = () => (Math.random() - 0.5);
+    const wires = (n, cx, cy, cz, sx, sy, sz, parent) => { for (let i = 0; i < n; i++) { const pts = []; for (let k = 0; k < 4; k++) pts.push(V(cx + rnd() * sx * (k / 3 + 0.2), cy + Math.abs(rnd()) * sy * (k / 3 + 0.1) - (k === 3 ? sy * 0.3 : 0), cz + rnd() * sz * (k / 3 + 0.2))); const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 14, 0.009 + Math.random() * 0.006, 5), new THREE.MeshStandardMaterial({ color: wireCols[(Math.random() * wireCols.length) | 0], roughness: 0.5 })); add(tube, parent); } };
+    const chips = (n, w, d, y, parent) => { for (let i = 0; i < n; i++) { const cw = 0.03 + Math.random() * 0.05, ch = 0.03 + Math.random() * 0.04; const c = new THREE.Mesh(new THREE.BoxGeometry(cw, 0.014, ch), new THREE.MeshStandardMaterial({ color: Math.random() < 0.25 ? 0x6a5a2a : 0x17181c, roughness: 0.4, metalness: 0.5 })); c.position.set(rnd() * w * 0.8, y, rnd() * d * 0.8); add(c, parent); } };
+    const led = (x, y, z, col, parent) => { const o = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 4), new THREE.MeshBasicMaterial({ color: col })); o.position.set(x, y, z); return add(o, parent); };
+    if (e.def.fly) {
+      if (ud.body) ud.body.visible = false; if (ud.ring) ud.ring.material.color.setHex(0x331a1a);
+      const shell = (top) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 8, 0, Math.PI * 2, top ? 0 : Math.PI / 2, Math.PI / 2), MAT(e.def.color, { side: THREE.DoubleSide })); m.scale.set(1, 0.75, 1.1); return m; };
+      const bottom = add(shell(false)); bottom.position.y = 1.0;
+      const hinge = add(new THREE.Group()); hinge.position.set(0, 1.0, 0.3); hinge.rotation.x = 2.05; const top = add(shell(true), hinge); top.position.z = -0.3;
+      const bd = add(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.02, 0.34), board)); bd.position.set(0, 1.0, -0.02); chips(7, 0.4, 0.34, 0.016, bd);
+      const cell = add(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.16, 10), new THREE.MeshStandardMaterial({ color: 0xd8b030, metalness: 0.6, roughness: 0.4 }))); cell.rotation.z = Math.PI / 2; cell.position.set(0.08, 1.07, 0.05);
+      wires(9, 0, 1.03, 0, 0.5, 0.18, 0.4, g); led(-0.12, 1.03, -0.1, 0x55ff88, g); led(0.14, 1.03, -0.1, 0xff4a3a, g); led(0, 1.03, 0.12, 0x55c8ff, g);
+    } else {
+      const torso = g.children[0]; torso.visible = false; const dark = MAT(0x2b2f35, { side: THREE.DoubleSide });
+      const part = (w, h, d, x, y, z, m = dark) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); add(o); return o; };
+      part(0.72, 0.82, 0.04, 0, 1.3, 0.2); part(0.04, 0.82, 0.44, -0.34, 1.3, 0); part(0.04, 0.82, 0.44, 0.34, 1.3, 0); part(0.72, 0.04, 0.44, 0, 0.9, 0); part(0.72, 0.04, 0.44, 0, 1.7, 0);
+      const door = add(new THREE.Group()); door.position.set(-0.36, 1.3, -0.22); door.rotation.y = -2.1; const dp = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.8, 0.04), MAT(e.def.color)); dp.position.x = 0.36; add(dp, door);
+      const b1 = part(0.52, 0.56, 0.02, 0, 1.32, 0.12, board); const b2 = part(0.3, 0.3, 0.02, 0.1, 1.3, -0.04, board); chips(8, 0.5, 0.5, 0.014, b1); b1.children.forEach(c => c.rotation.x = Math.PI / 2); chips(4, 0.28, 0.28, 0.014, b2); b2.children.forEach(c => c.rotation.x = Math.PI / 2);
+      const core = part(0.14, 0.14, 0.14, -0.15, 1.32, -0.12, new THREE.MeshBasicMaterial({ color: e.def.glow })); void core;
+      wires(14, 0, 1.3, 0, 0.6, 0.5, 0.4, g); led(-0.2, 1.62, 0.1, 0x55ff88, g); led(0.2, 1.05, 0.1, 0xff4a3a, g);
+    }
+    sfx('zip', 0.9);
   }
   updateEnemy(e, dt, player) {
     const d0 = e.def, w = d0.weapon, px = player.pos.x, pz = player.pos.z, dx = px - e.pos.x, dz = pz - e.pos.z, d = Math.hypot(dx, dz); e.t += dt;
@@ -229,17 +271,33 @@ export class ExtractShip extends Surface {
       if (e.pathT <= 0 || !e.path) { e.path = this.nav.find(e.pos.x, e.pos.z, tgt.x, tgt.z, !!d0.fly, 40000); e.pi = 0; e.pathT = 0.9 + Math.random() * 0.5; }
       if (e.path && e.pi < e.path.length) this.follow(e, dt, d0.speed); else this.idleAnim(e, dt);
     } else if (d < d0.prefer * 0.55 && d0.fly) { /* drone backs off a bit */ this.step(e, -dx / d, -dz / d, d0.speed * 0.6, dt); this.faceTo(e, dx, dz, dt); this.anim(e, dt, d0.speed * 0.6); }
-    else { this.faceTo(e, dx, dz, dt); if (d0.fly || d0.name.includes('Runner')) { this.step(e, -dz / (d || 1) * e.strafe, dx / (d || 1) * e.strafe, d0.speed * 0.5, dt); } this.anim(e, dt, d0.fly ? 1 : 0); }
+    else { this.faceTo(e, dx, dz, dt); if (d0.name.includes('Runner')) { this.step(e, -dz / (d || 1) * e.strafe, dx / (d || 1) * e.strafe, d0.speed * 0.5, dt); } this.anim(e, dt, d0.fly ? 1 : 0); }
     if (inRange) this.faceTo(e, dx, dz, dt);
     // firing
     e.fireT -= dt;
-    if (inRange && e.fireT <= 0) {
+    if (w.kind === 'taser') this.taserLogic(e, player, d, dt);
+    else if (inRange && e.fireT <= 0) {
       this.shoot(e, player, d);
       if (w.burst) { e.burst = e.burst > 0 ? e.burst - 1 : w.burst - 1; e.fireT = e.burst > 0 ? w.rate : w.gap + Math.random() * 0.6; } else e.fireT = w.rate + Math.random() * 0.5;
     }
     if (e.mesh.userData.rotors) e.mesh.userData.rotors.forEach(r => r.rotation.y += dt * 40);
     if (d0.fly) { e.pos.y = 0.55 + Math.sin(e.t * 3) * 0.08; e.mesh.position.y = e.pos.y; }
     if (e.flash > 0) e.flash -= dt;
+  }
+  // a drone only zaps when it is right on top of you, facing you, with a clean line to both chest and head
+  clearLine(a, b) {
+    const x0 = Math.min(a.x, b.x) - 0.3, x1 = Math.max(a.x, b.x) + 0.3, z0 = Math.min(a.z, b.z) - 0.3, z1 = Math.max(a.z, b.z) + 0.3, near = this.colliders.filter(c => !c.roof && c.maxx > x0 && c.minx < x1 && c.maxz > z0 && c.minz < z1);
+    const n = Math.ceil(a.distanceTo(b) / 0.15);
+    for (let k = 1; k < n; k++) { const t = k / n, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t, z = a.z + (b.z - a.z) * t; for (const c of near) if (x > c.minx - 0.05 && x < c.maxx + 0.05 && z > c.minz - 0.05 && z < c.maxz + 0.05 && y < (c.maxy ?? 99)) return false; }
+    return true;
+  }
+  taserLogic(e, player, d, dt) {
+    const w = e.def.weapon, dx = player.pos.x - e.pos.x, dz = player.pos.z - e.pos.z, ry = e.mesh.rotation.y, face = d > 0.01 ? (-Math.sin(ry) * dx - Math.cos(ry) * dz) / d : 1;
+    let ok = d <= w.range && face > 0.86;
+    if (ok) { const from = V(e.pos.x, e.pos.y + 1.0, e.pos.z); ok = this.clearLine(from, V(player.pos.x, player.pos.y + 1.3, player.pos.z)) && this.clearLine(from, V(player.pos.x, player.pos.y + (player.crouch ? 0.9 : 1.62), player.pos.z)); }
+    const ring = e.mesh.userData.ring;
+    if (e.wind > 0) { if (!ok) { e.wind = 0; e.fireT = 0.7; if (ring) ring.scale.setScalar(1); } else { e.wind -= dt; if (ring) ring.scale.setScalar(1 + (1 - e.wind / w.wind) * 0.5 + Math.sin(e.t * 50) * 0.08); if (e.wind <= 0) { this.shoot(e, player, d); e.fireT = w.rate; if (ring) ring.scale.setScalar(1); } } }
+    else if (ok && e.fireT <= 0) { e.wind = w.wind; sfx('ui', 0.6); }
   }
   idleAnim(e, dt) { if (e.def.human) animateHuman(e.mesh, { idleT: e.t, arms: 'gun', aim: 0.7 }); else if (e.def.fly) { e.pos.y = 0.55 + Math.sin(e.t * 2) * 0.08; e.mesh.position.y = e.pos.y; e.mesh.userData.rotors.forEach(r => r.rotation.y += dt * 30); } }
   follow(e, dt, speed) {

@@ -47,7 +47,7 @@ const pack = new PackWorld(camera, { dropItem: (h, pos) => surf.dropItem(h, pos)
 G.dropped = g => { surf.dropGun(g, { x: player.pos.x + Math.sin(player.yaw) * -1.2, z: player.pos.z + Math.cos(player.yaw) * -1.2 }); };
 
 const X = new Extraction({
-  S: xs, get player() { return player; }, ui, pack, fadeTo, lock,
+  S: xs, get player() { return player; }, ui, pack, fadeTo, lock, openLoot: ctx => pack.openLoot(ctx, player),
   setMode: m => { mode = m; started = true; },
   resetPack: () => { player.packOpen = false; if (pack.blocking) pack.requestClose(); if (G.held) G.held = null; },
   toTitle: () => { mode = 'title'; started = false; document.getElementById('title').style.display = ''; },

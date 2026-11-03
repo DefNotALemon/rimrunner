@@ -138,3 +138,17 @@ export const JOBS = {
   cook:     { label: 'Cook', buys: ['food', 'ore'], smarts: [0.2, 0.55] },
   drifter:  { label: 'Drifter', buys: ['food', 'ammo', 'gun'], smarts: [0.1, 0.5] },
 };
+
+// Hover descriptions shown under an item's name when you look at it in your bag or a loot tray.
+export const DESC = {
+  iron_ore: 'Rusty, heavy rock. Smelts into plate.', copper_ore: 'Green-streaked ore. Draws out into wire.', silica: 'Fine sand that melts into lenses and glass.', carbon: 'Black, brittle chunks. Fuel and steel-making.', ice: 'Clear frozen water, still cold in the pack.',
+  titanium_ore: 'Light, strong ore. Worth hauling.', cobalt: 'Blue-grey nodules. Alloys and plasma parts.', platinum: 'Dense white metal. Fetches a fine price.', hymnstone: 'A humming violet crystal. Nobody agrees what it is.',
+  iron_plate: 'Flat stamped plate, ready for the bench.', steel: 'Hard bar stock from a smelter.', alloy: 'Titanium-alloy plate. Light and tough.', wire: 'A coil of bare copper wire.', lens: 'Ground glass, clear as water.', circuit: 'A green board with soldered chips. Every machine wants one.',
+  cell: 'A sealed power cell, still holding charge.', gunpart: 'Springs, pins and a bolt carrier. Gunsmith bait.', ammo: 'A box of mixed rounds. Fits most of your guns.', ruby: 'An uncut red stone with a nasty glint.', data_chip: 'A coded chip. Somebody paid to keep this private.', parcel: 'A sealed parcel, not yours to open.',
+  ration: 'A dense bar. Tastes like regret, fills you up.', water: 'A flask of clean water.', medkit: 'Bandages, sealant and a stim. Patches you up.', o2_tank: 'A canister of breathable air.', pack_frame: 'A stiffer frame. Fits more flaps on your pack.', coil: 'A spaceway coil for your ship.', tank_ext: 'An extra fuel tank for your ship.', fuel: 'A glowing fuel rod.',
+  pistol: 'Reliable rim sidearm. Light rounds, light kick.', coach: 'Short double barrel. Devastating up close.', rifle: 'Long reach, steady aim.', breacher: 'Wide-bore shotgun that clears doorways.', arc: 'Rapid-fire arc carbine. Hums when it charges.',
+  hpistol: 'A hand cannon from Space Ranger stock. Slow, loud, hits hard.', shotgun: 'Pump shotgun. Nine pellets a pull.', pulsepistol: 'Fires bolts of light. About forty to a cell.', pulsecarbine: 'Fast pulse bolts, hold to fire. Runs hot.', scatter: 'The energy shotgun: six bolts at once.', railrifle: 'A magnet coil throws a slug through almost anything.',
+  drive: 'A corporate storage drive. Encrypted, valuable to the right buyer.', core: 'The heart of a server rack. Heavy and warm.', wafer: 'A silicon wafer, thin as a coin and worth plenty.', reagent: 'A sealed vial of lab reagent. Do not shake.', servo: 'A precise little robot joint motor.', ai_core: 'A robot brain. Still blinking.', barrel: 'A rough barrel blank for a gunsmith.',
+  schematic: 'A corporate design file on a hard card. Rival firms would kill for it.', keycard: 'Opens a vault door without tripping the alarm.', armor_plate: 'A hardened plate. Sells well; armor comes from the dealer.', stimpack: 'A quick shot of combat stim. Heals and steadies you.', antenna: 'A relay antenna. Drop one to extend your ship AI link on a behemoth.',
+};
+export const describe = id => { const it = ITEMS[id]; return DESC[id] || (it.cat === 'ore' ? 'Raw rock from the ground.' : it.cat === 'gun' ? 'A firearm.' : it.cat === 'loot' ? 'Salvage worth selling.' : 'Something useful.'); };
