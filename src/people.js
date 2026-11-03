@@ -117,7 +117,7 @@ export function buildHuman(look, outfit, opts = {}) {
 export function setOutfit(h, outfit) {
   const U = h.userData; const J = U.J; U.outfit = outfit;
   // remove old
-  for (const o of [...(U.cloth || [])]) o.parent && o.parent.remove(o); U.cloth = [];
+  for (const o of [...(U.cloth || [])]) o.parent && o.parent.remove(o); U.cloth = []; U.skirt = null;
   const add = (parent, mesh) => { parent.add(mesh); mesh.castShadow = true; U.cloth.push(mesh); return mesh; };
   const B = U.B, S = U.S; const fem = U.look.female;
   const armLen = 0.28 * S, foreLen = 0.26 * S, thighLen = 0.45 * S, shinLen = 0.43 * S;
@@ -143,7 +143,7 @@ export function setOutfit(h, outfit) {
     }
     if (t.kind === 'coat') {   // skirt is two open half-shells riding on the thighs: front/back panels swing and fold with each leg instead of one rigid tube the legs poke through
       const cm = cloth(t.color, { side: THREE.DoubleSide });
-      for (const s of [-1, 1]) { const hipJ = new THREE.Group(); hipJ.position.set(0, -0.06, 0); J.hips.add(hipJ); U.cloth.push(hipJ); (U.skirt = U.skirt || {})[s < 0 ? 0 : 1] = hipJ; const sk = new THREE.Mesh(new THREE.CylinderGeometry(0.2 * B, 0.27 * B, 0.46 * S, 14, 1, true, s < 0 ? Math.PI - 0.04 : -0.04, Math.PI + 0.08), cm); sk.scale.z = 0.72; sk.position.set(-s * 0.095 * B, 0.11 - 0.23 * S, 0); add(hipJ, sk); }
+      for (const s of [-1, 1]) { const hipJ = new THREE.Group(); hipJ.position.set(0, -0.06, 0); J.hips.add(hipJ); U.cloth.push(hipJ); (U.skirt = U.skirt || {})[s < 0 ? 0 : 1] = hipJ; const sk = new THREE.Mesh(new THREE.CylinderGeometry(0.2 * B, 0.27 * B, 0.46 * S, 14, 1, true, s < 0 ? Math.PI - 0.04 : -0.04, Math.PI + 0.08), cm); sk.scale.z = 0.72; sk.position.set(0, 0.11 - 0.23 * S, 0); add(hipJ, sk); }
     } else U.skirt = null;
     if (t.kind === 'overalls') { for (const s of [-1, 1]) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.34, 0.01), acc); st.position.set(s * 0.07 * B, 0.44, -0.105); st.rotation.z = s * 0.1; add(J.spine, st); } const bib = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.01), mat); bib.position.set(0, 0.28, -0.106); add(J.spine, bib); }
     if (t.kind === 'apron') { const ap = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.46, 0.012), M(t.accent ?? 0xffffff)); ap.position.set(0, 0.2, -0.112); add(J.spine, ap); }

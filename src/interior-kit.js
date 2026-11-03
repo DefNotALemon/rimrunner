@@ -115,8 +115,8 @@ export class Ctx {
     for (const [c, w, kind] of gs) {
       const g0 = c - w / 2, g1 = c + w / 2; seg(cur, g0);
       box('matte', col, g0, g1, 2.25, y1);
-      box('matte', o.trim ?? TRIM, g0 - 0.07, g0, 0, 2.25, 0.02); box('matte', o.trim ?? TRIM, g1, g1 + 0.07, 0, 2.25, 0.02);
-      if (kind !== 'win') { box('matte', o.trim ?? TRIM, g0 - 0.07, g1 + 0.07, 2.25, 2.33, 0.025); box('matte', 0x6a5a48, g0, g1, 0, 0.056, 0.02); }   // head casing + threshold plate that bridges the floors on either side of every doorway
+      box('matte', o.trim ?? TRIM, g0 - 0.07, g0 + 0.03, 0, 2.27, 0.02); box('matte', o.trim ?? TRIM, g1 - 0.03, g1 + 0.07, 0, 2.27, 0.02);   // jambs lap 3 cm into the opening so no face is coplanar with the cut wall ends
+      if (kind !== 'win') { box('matte', o.trim ?? TRIM, g0 - 0.07, g1 + 0.07, 2.19, 2.27, 0.025); box('matte', 0x6a5a48, g0 + 0.03, g1 - 0.03, 0, 0.053, 0.02); }   // head casing hangs below the header and buries its top; threshold plate sits 3 mm above the floor slab   // head casing + threshold plate that bridges the floors on either side of every doorway
       if (kind === 'win') { box('matte', col, g0, g1, 0, 0.95); box('glass', 0xa8d0e8, g0, g1, 0.95, 2.25, -t / 2 + 0.05); colr(g0, g1, 2.25); }
       cur = g1;
     }

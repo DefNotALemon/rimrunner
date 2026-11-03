@@ -95,7 +95,7 @@ export function makeBuilding(surf, b) {
   const JW = 0.1, OPEN = DW - JW;   // jamb width, clear half-opening
   bm(JW, 2.4, T + 0.06, trim, -(DW - JW / 2), 1.2, 0); bm(JW, 2.4, T + 0.06, trim, DW - JW / 2, 1.2, 0); bm(DW * 2, 0.1, T + 0.06, trim, 0, 2.45, 0);   // inner jambs + head, 3 cm proud of both wall faces
   for (const s of [-1, 1]) bm(0.14, 2.64, 0.04, trim, s * (DW + 0.07), 1.32, T / 2 + 0.02); bm(DW * 2 + 0.28, 0.14, 0.04, trim, 0, 2.57, T / 2 + 0.02);   // exterior casing on the facade
-  bm(OPEN * 2, 0.05, T + 0.06, std(0x6a5a48, { roughness: 0.6 }), 0, 0.025, 0);   // threshold plate, flush with the room floor
+  bm(OPEN * 2, 0.053, T + 0.06, std(0x6a5a48, { roughness: 0.6 }), 0, 0.0265, 0);   // threshold plate, flush with the room floor
   const leafMat = std(b.doorColor ?? 0x4a3a2a, { roughness: 0.7 });
   for (const s of [-1, 1]) {   // each leaf hinges on its jamb and stands open about 100 degrees, inside the room, clear of the frame
     const pv = new THREE.Group(); const hp = Pv(s * (OPEN - 0.02), -T / 2 + 0.04); pv.position.set(hp.x, 0.06, hp.z); pv.rotation.y = ry - s * 1.75;
