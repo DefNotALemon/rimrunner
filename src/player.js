@@ -350,7 +350,7 @@ export class Player {
   }
 
   updateBody(dt, speed) {
-    const b = this.body, J = b.userData.J; b.position.copy(this.pos); b.rotation.order = 'YXZ'; b.rotation.y = this.bodyYaw;
+    const b = this.body, J = b.userData.J; b.position.copy(this.pos); this.pack3.position.y = 0.3 + this.crouchBlend * 0.04; b.rotation.order = 'YXZ'; b.rotation.y = this.bodyYaw;
     const full = this.tp > 0.3; J.head.visible = full; J.armL.visible = J.armR.visible = full;   // first person uses the viewmodel arms
     const gun = G.hand; let arms = 'relaxed'; if (gun) arms = this.gunUp > 0.5 ? 'gun' : 'lowgun'; else if (this.leaning) arms = 'wallhands';
     animateHuman(b, { phase: Math.PI * 2 * this.gait, speed: speed / 4.4, crouch: this.crouchBlend, arms, aim: this.gunUp, pitch: -this.pitch * 0.7, idleT: G.time, look: -this.pitch });

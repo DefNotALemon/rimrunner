@@ -100,7 +100,7 @@ export class Ctx {
   // paint the inner faces of the four outer walls (plaster above a darker wainscot) so rooms don't read as bare siding/brick/concrete
   paintShell(col, dado) {
     const { u0, u1, vb, vf, Hc } = this, t = 0.025, y = 1.0;
-    const strip = (a, b, c, d) => { this.lb('matte', dado, a, b, c, d, 0, y); this.lb('matte', col, a, b, c, d, y, Hc); this.lb('matte', 0x3a3028, a - (b - a > 0.5 && c === d ? 0 : 0), b, c, d, y, y + 0.05); };
+    const strip = (a, b, c, d) => { this.lb('matte', dado, a, b, c, d, 0, y); this.lb('matte', 0x3a3028, a, b, c, d, y, y + 0.05); this.lb('matte', col, a, b, c, d, y + 0.05, Hc); };   // dado, rail, plaster stacked (never sharing a face range)
     strip(u0, u0 + t, vb, vf); strip(u1 - t, u1, vb, vf); strip(u0, u1, vb, vb + t);
     const dw = 1.15; strip(u0, -dw, vf - t, vf); strip(dw, u1, vf - t, vf); this.lb('matte', col, -dw, dw, vf - t, vf, 2.5, Hc);
   }
@@ -116,6 +116,7 @@ export class Ctx {
       const g0 = c - w / 2, g1 = c + w / 2; seg(cur, g0);
       box('matte', col, g0, g1, 2.25, y1);
       box('matte', o.trim ?? TRIM, g0 - 0.07, g0, 0, 2.25, 0.02); box('matte', o.trim ?? TRIM, g1, g1 + 0.07, 0, 2.25, 0.02);
+      if (kind !== 'win') { box('matte', o.trim ?? TRIM, g0 - 0.07, g1 + 0.07, 2.25, 2.33, 0.025); box('matte', 0x6a5a48, g0, g1, 0, 0.056, 0.02); }   // head casing + threshold plate that bridges the floors on either side of every doorway
       if (kind === 'win') { box('matte', col, g0, g1, 0, 0.95); box('glass', 0xa8d0e8, g0, g1, 0.95, 2.25, -t / 2 + 0.05); colr(g0, g1, 2.25); }
       cur = g1;
     }
@@ -148,7 +149,7 @@ export class Ctx {
     if (h > 0 && !o.nocol) { const sw = Math.abs(Math.sin(rot)) > 0.5; this.solid(u, v, sw ? d : w, sw ? w : d, h); }
     if (name === 'bed' || name === 'bunk') {
       const sw = Math.abs(Math.sin(rot)) > 0.5; const n = name === 'bunk' ? 2 : (o.double ? 2 : 1); const p = this.P(u, v);
-      this.beds.push({ u, v, n, x: p.x, z: p.z, side: this.P(u + (sw ? 0 : 0.9), v + (sw ? 0.9 : 0)) });
+      this.beds.push({ u, v, n, R: this.rec.ry + rot, x: p.x, z: p.z, side: this.P(u + (sw ? 0 : 0.9), v + (sw ? 0.9 : 0)) });
     }
     return [w, d, h];
   }

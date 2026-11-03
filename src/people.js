@@ -192,25 +192,51 @@ export function setOutfit(h, outfit) {
 
 // ---- animation ----
 // o: {phase (radians), speed (0..1.4), crouch (0..1), arms ('relaxed'|'gun'|'lowgun'), aim (0..1), pitch, lean (-1..1), idleT, ko}
+// Leg rig numbers: thigh/shin lengths are in the body's local space; SOLE is how far the boot/foot mesh hangs below the ankle joint.
+const HIP_DROP = 0.06, SOLE = 0.078, TOE = 0.19, HEEL = 0.06;
+function legIK(T, Sh, aC) { return (drop) => { const need = Math.min(T + Sh, Math.max(0.2, T + Sh - drop)); const ca = (need - T * Math.cos(aC)) / Sh; return aC + Math.acos(Math.max(-1, Math.min(1, ca))); }; }   // knee flex that lowers the hips by `drop` with the thigh flexed aC
 export function animateHuman(h, o) {
-  const J = h.userData.J; const sp = Math.min(1.3, o.speed || 0), p = o.phase || 0, c = o.crouch || 0, S = h.userData.S;
-  const swing = Math.sin(p) * 0.75 * sp, kneeL = Math.max(0, Math.sin(p + 1.4)) * 1.1 * sp, kneeR = Math.max(0, Math.sin(p + 1.4 + Math.PI)) * 1.1 * sp;
-  J.hips.position.y = 0.93 * 1 - c * 0.3 + Math.abs(Math.cos(p)) * 0.012 * sp - (1 - Math.min(1, sp)) * 0.0 + Math.sin((o.idleT || 0) * 1.7) * 0.002;
-  J.hips.rotation.y = Math.sin(p) * 0.09 * sp;
-  J.spine.rotation.x = -c * 0.35 - sp * 0.05 + (o.lean || 0) * 0.0; J.spine.rotation.y = -Math.sin(p) * 0.11 * sp; J.spine.rotation.z = 0;
-  J.legL.rotation.x = swing + c * 1.05; J.legR.rotation.x = -swing + c * 1.05; J.legL.rotation.z = 0.03; J.legR.rotation.z = -0.03;
-  J.kneeL.rotation.x = -(kneeL + c * 1.95); J.kneeR.rotation.x = -(kneeR + c * 1.95);
-  J.footL.rotation.x = kneeL * 0.35 + c * 0.2; J.footR.rotation.x = kneeR * 0.35 + c * 0.2;
+  if (h.rotation.order !== 'YXZ') h.rotation.order = 'YXZ';   // yaw first, then tip over about the body's own axis
+  const J = h.userData.J; const S = h.userData.S || 1; const sp = Math.min(1.3, o.speed || 0), p = o.phase || 0, c = Math.min(1, Math.max(0, o.crouch || 0));
+  const T = 0.45 * S, Sh = 0.43 * S, base = HIP_DROP + SOLE + T + Sh;   // hip height that puts the soles exactly on the floor when standing
+  if (o.ko) {   // limp pose: lying prone (or supine for sleepers), limbs relaxed, head turned so the face never digs into the floor
+    h.rotation.x = o.supine ? Math.PI / 2 : -Math.PI / 2;
+    J.hips.position.set(0, base, 0); J.hips.rotation.set(0, 0, 0); J.spine.rotation.set(0, 0, 0);
+    J.legL.rotation.set(o.supine ? 0.06 : 0.1, 0, 0.1); J.legR.rotation.set(o.supine ? -0.05 : -0.08, 0, -0.1); J.kneeL.rotation.x = o.supine ? -0.12 : -0.3; J.kneeR.rotation.x = o.supine ? -0.18 : -0.15; J.footL.rotation.x = J.footR.rotation.x = 0;
+    J.armL.rotation.set(o.supine ? 0.05 : -0.15, 0, 0.32); J.armR.rotation.set(o.supine ? 0.05 : -0.15, 0, -0.32); J.armL.rotation.y = J.armR.rotation.y = 0; J.elbowL.rotation.x = J.elbowR.rotation.x = o.supine ? 0.25 : 0.4;
+    if (o.supine) { J.armL.rotation.set(0.35, 0, 0.12); J.armR.rotation.set(0.35, 0, -0.12); J.elbowL.rotation.x = J.elbowR.rotation.x = 1.5; J.armL.rotation.y = -0.5; J.armR.rotation.y = 0.5; }   // hands folded on the chest
+    J.head.rotation.set(0, o.supine ? 0.15 : 1.15, o.supine ? 0 : 0.1); return;
+  }
+  if (h.rotation.x !== 0) h.rotation.x = 0;
+  // --- legs: swing + knee lift, then the hips ride on whichever foot is planted so soles touch the floor and never sink
+  const amp = 0.46 * sp, flex = 0.1 * Math.min(1, sp);
+  const wa = [Math.sin(p) * amp, -Math.sin(p) * amp];
+  const wk = [Math.max(0, Math.sin(p + 1.4)) * 1.0 * sp + flex, Math.max(0, Math.sin(p + 1.4 + Math.PI)) * 1.0 * sp + flex];
+  const aC = 0.95, kC = legIK(T, Sh, aC)(0.3);   // crouch pose: thigh flexed, hips 30 cm lower
+  const A = [0, 0], K = [0, 0], F = [0, 0]; let ext = 0;
+  for (let i = 0; i < 2; i++) {
+    A[i] = wa[i] * (1 - c * 0.7) + aC * c; K[i] = wk[i] * (1 - c) + kC * c;
+    F[i] = K[i] - A[i] - Math.max(0, -A[i]) * 0.5 * (1 - c);   // keep the sole level; roll onto the toes off the back foot
+    const th = A[i] - K[i] + F[i], drop = SOLE * Math.cos(th) + (th < 0 ? TOE * Math.sin(-th) : HEEL * Math.sin(th));   // lowest point of the foot given its pitch (toe-down digs the toe in, so lift the hips to match)
+    ext = Math.max(ext, T * Math.cos(A[i]) + Sh * Math.cos(A[i] - K[i]) + drop - SOLE);
+  }
+  J.hips.position.y = base - (T + Sh) + ext + Math.sin((o.idleT || 0) * 1.7) * 0.002 * (1 - c);
+  J.hips.position.x = Math.sin(p) * 0.012 * sp; J.hips.position.z = 0;
+  J.hips.rotation.y = Math.sin(p) * 0.09 * sp; J.hips.rotation.x = c * 0.0; J.hips.rotation.z = 0;
+  J.spine.rotation.x = -c * 0.42 - sp * 0.05; J.spine.rotation.y = -Math.sin(p) * 0.11 * sp; J.spine.rotation.z = 0;
+  J.legL.rotation.x = A[0]; J.legR.rotation.x = A[1]; J.legL.rotation.z = 0.03; J.legR.rotation.z = -0.03;
+  J.kneeL.rotation.x = -K[0]; J.kneeR.rotation.x = -K[1]; J.footL.rotation.x = F[0]; J.footR.rotation.x = F[1];
+  const swing = Math.sin(p) * 0.75 * sp;
   const idle = Math.sin((o.idleT || 0) * 1.5) * 0.015;
   const mode = o.arms || 'relaxed';
-  if (mode === 'relaxed') { J.armL.rotation.x = -swing * 0.8; J.armR.rotation.x = swing * 0.8; J.armL.rotation.z = 0.08 + idle; J.armR.rotation.z = -0.08 - idle; J.elbowL.rotation.x = 0.12 + Math.max(0, -swing) * 0.5; J.elbowR.rotation.x = 0.12 + Math.max(0, swing) * 0.5; J.armL.rotation.y = J.armR.rotation.y = 0; }
+  if (mode === 'relaxed') { const ar = 1 - c * 0.6; J.armL.rotation.x = -swing * 0.8 * ar + c * 0.15; J.armR.rotation.x = swing * 0.8 * ar + c * 0.15; J.armL.rotation.z = 0.08 + idle + c * 0.1; J.armR.rotation.z = -0.08 - idle - c * 0.1; J.elbowL.rotation.x = 0.12 + Math.max(0, -swing) * 0.5 + c * 0.5; J.elbowR.rotation.x = 0.12 + Math.max(0, swing) * 0.5 + c * 0.5; J.armL.rotation.y = J.armR.rotation.y = 0; }
   else if (mode === 'gun' || mode === 'lowgun') {
     const up = mode === 'gun' ? (o.aim ?? 1) : 0; const pitch = o.pitch || 0;
     J.armR.rotation.x = 0.1 * (1 - up) + (1.25 + pitch * 0.8) * up - swing * 0.2 * (1 - up); J.armR.rotation.z = -0.06; J.armR.rotation.y = 0; J.elbowR.rotation.x = 0.3 + 0.5 * (1 - up);
     J.armL.rotation.x = -swing * 0.8 * (1 - up) + (1.1 + pitch * 0.8) * up; J.armL.rotation.z = 0.08 + (0.28 * up); J.armL.rotation.y = 0.45 * up; J.elbowL.rotation.x = 0.12 + 1.0 * up;
+    if (c > 0) { J.armR.rotation.x += c * 0.35 * (1 - up) + c * 0.42 * up; J.armL.rotation.x += c * 0.3 * (1 - up) + c * 0.42 * up; }   // the torso leans forward, so lift the arms to keep the weapon level
   } else if (mode === 'wallhands') { J.armL.rotation.x = -0.6; J.armR.rotation.x = -0.6; J.armL.rotation.y = -0.5; J.armR.rotation.y = 0.5; J.elbowL.rotation.x = 1.3; J.elbowR.rotation.x = 1.3; }
-  J.head.rotation.x = (o.look || 0) * 0.5; J.head.rotation.y = 0;
-  if (o.ko) { h.rotation.x = -Math.PI / 2; h.position.y = 0.12; } else if (h.rotation.x !== 0) { h.rotation.x = 0; }
+  J.head.rotation.x = (o.look || 0) * 0.5 + c * 0.3; J.head.rotation.y = 0; J.head.rotation.z = 0;
 }
 
 export const GUN_ATTACH = (gunMesh) => { gunMesh.rotation.set(-Math.PI / 2, 0, 0); gunMesh.position.set(0, -0.08, -0.015); return gunMesh; };

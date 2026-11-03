@@ -39,7 +39,8 @@ export function makeBuilding(surf, b) {
   side('n', x0, x1, z0, true); side('s', x0, x1, z1, true); side('w', z0, z1, x0, false); side('e', z0, z1, x1, false);
   // plinth + corner posts
   const pl = 0.42; const pm = surfMat('concrete', 0x8a8a86);
-  K.box(x0 - 0.12, x1 + 0.12, 0, pl, z0 - 0.12, z0 + 0.1, pm, { shadow: false }); K.box(x0 - 0.12, x1 + 0.12, 0, pl, z1 - 0.1, z1 + 0.12, pm, { shadow: false }); K.box(x0 - 0.12, x0 + 0.1, 0, pl, z0, z1, pm, { shadow: false }); K.box(x1 - 0.1, x1 + 0.12, 0, pl, z0, z1, pm, { shadow: false });
+  const lipN = (side, a0, a1, f0, f1, horiz) => { if (b.door !== side) { horiz ? K.box(a0, a1, 0, pl, f0, f1, pm, { shadow: false }) : K.box(f0, f1, 0, pl, a0, a1, pm, { shadow: false }); return; } const c = horiz ? b.x : b.z; for (const [q0, q1] of [[a0, c - DW], [c + DW, a1]]) horiz ? K.box(q0, q1, 0, pl, f0, f1, pm, { shadow: false }) : K.box(f0, f1, 0, pl, q0, q1, pm, { shadow: false }); };   // foundation lip proud of the wall face; opens at the door so nothing blocks the threshold
+  lipN('n', x0 - 0.21, x1 + 0.21, z0 - 0.21, z0 - 0.14, true); lipN('s', x0 - 0.21, x1 + 0.21, z1 + 0.14, z1 + 0.21, true); lipN('w', z0 - 0.14, z1 + 0.14, x0 - 0.21, x0 - 0.14, false); lipN('e', z0 - 0.14, z1 + 0.14, x1 + 0.14, x1 + 0.21, false);
   for (const [cx, cz] of [[x0, z0], [x1, z0], [x0, z1], [x1, z1]]) K.box(cx - 0.17, cx + 0.17, 0, H + 0.1, cz - 0.17, cz + 0.17, trim, { shadow: true });
   // floor / ceiling
   K.box(x0, x1, -0.05, 0.03, z0, z1, surfMat('floor', b.floor ?? 0x9a7a58), { shadow: false, tile: 2 });
@@ -68,12 +69,12 @@ export function makeBuilding(surf, b) {
   }
   for (let i = nRoof0; i < surf.root.children.length; i++) surf.root.children[i].userData.roof = true;
   // windows
-  const glassMat = (lit) => { const m = new THREE.MeshStandardMaterial({ map: tex.window(lit), emissiveMap: tex.window(true), emissive: 0xffffff, emissiveIntensity: lit ? 0.4 : 0.0, roughness: 0.15, metalness: 0.2 }); (lit ? surf.windowMats : surf.windowMatsDark).push(m); return m; };
+  const glassMat = (lit) => { const gk = lit ? '_glassLit' : '_glassDark'; if (surf[gk]) return surf[gk]; const m = surf[gk] = new THREE.MeshStandardMaterial({ map: tex.window(lit), emissiveMap: tex.window(true), emissive: 0xffffff, emissiveIntensity: lit ? 0.4 : 0.0, roughness: 0.15, metalness: 0.2 }); (lit ? surf.windowMats : surf.windowMatsDark).push(m); return m; };
   const winGeo = new THREE.PlaneGeometry(1.15, 1.45), frameGeo = new THREE.BoxGeometry(1.35, 1.65, 0.14), sillGeo = new THREE.BoxGeometry(1.5, 0.1, 0.28);
   const placeWin = (px, pz, nx, nz) => {
-    const a = Math.atan2(nx, nz); const lit = r() < 0.75; const g = new THREE.Mesh(winGeo, glassMat(lit)); g.position.set(px + nx * 0.2, 1.7, pz + nz * 0.2); g.rotation.y = a; surf.root.add(g);
-    const f = new THREE.Mesh(frameGeo, trim); f.position.set(px + nx * 0.12, 1.7, pz + nz * 0.12); f.rotation.y = a; f.castShadow = true; surf.root.add(f);
-    const s = new THREE.Mesh(sillGeo, trim); s.position.set(px + nx * 0.2, 0.84, pz + nz * 0.2); s.rotation.y = a; surf.root.add(s);
+    const a = Math.atan2(nx, nz); const lit = r() < 0.75; const g = new THREE.Mesh(winGeo, glassMat(lit)); g.position.set(px + nx * 0.145, 1.7, pz + nz * 0.145); g.rotation.y = a; surf.root.add(g);
+    const f = new THREE.Mesh(frameGeo, trim); f.position.set(px + nx * 0.07, 1.7, pz + nz * 0.07); f.rotation.y = a; f.castShadow = true; surf.root.add(f);
+    const s = new THREE.Mesh(sillGeo, trim); s.position.set(px + nx * 0.14, 0.82, pz + nz * 0.14); s.rotation.y = a; surf.root.add(s);
     // interior side: one framed pane on the inner wall face, tinted to the sky outside
     const g2 = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.7), surf.innerGlass); g2.position.set(px - nx * (T + 0.03), 1.7, pz - nz * (T + 0.03)); g2.rotation.y = a + Math.PI; surf.root.add(g2);
   };
@@ -87,22 +88,41 @@ export function makeBuilding(surf, b) {
       if (b.kind === 'house' && r() < 0.15) continue; placeWin(px, pz, nx, nz);
     }
   }
-  // door: frame, open leaf, awning, steps, sign
-  const D = P(0, b.door === 'n' || b.door === 's' ? (b.d / 2) : (b.w / 2)); const dx = D.x, dz = D.z;
-  const fr = (u, w2, h2, y) => { const p = P(u, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2); const m = new THREE.Mesh(new THREE.BoxGeometry(w2, h2, 0.4), trim); m.position.set(p.x, y, p.z); m.rotation.y = ry; m.castShadow = true; surf.root.add(m); };
-  fr(-DW - 0.08, 0.16, 2.55, 1.28); fr(DW + 0.08, 0.16, 2.55, 1.28); fr(0, DW * 2 + 0.3, 0.16, 2.58);
-  { const hinge = P(-DW + 0.05, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 0.02); const leaf = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.35, 0.07), std(b.doorColor ?? 0x4a3a2a, { roughness: .7 })); const pv = new THREE.Group(); pv.position.set(hinge.x, 1.2, hinge.z); pv.rotation.y = ry + 1.25; leaf.position.set(0.5, 0, 0); pv.add(leaf); const hdl = new THREE.Mesh(new THREE.SphereGeometry(.04, 6, 6), STEEL); hdl.position.set(0.88, 0, 0.05); pv.add(hdl); pv.traverse(o => o.isMesh && (o.castShadow = true)); surf.root.add(pv); }
-  const A = P(0, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 0.9);   // awning
-  const aw = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 2.2, 0.08, 2.0), std(b.awning ?? 0x7a2a2a, { roughness: .8 })); aw.position.set(A.x, 3.05, A.z); aw.rotation.set(0, ry, 0); aw.rotateX(0.18); aw.castShadow = true; surf.root.add(aw);
-  for (const u of [-DW - 0.9, DW + 0.9]) { const p = P(u, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 1.7); const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.9, 8), trim); post.position.set(p.x, 1.45, p.z); post.castShadow = true; surf.root.add(post); }
-  const stp = P(0, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 0.75); const step = new THREE.Mesh(new THREE.BoxGeometry(DW * 2 + 0.6, 0.2, 1.3), pm); step.position.set(stp.x, 0.1, stp.z); step.rotation.y = ry; step.receiveShadow = true; surf.root.add(step);
-  const sgp = P(0, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 0.2); const sg = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 1.0), new THREE.MeshStandardMaterial({ map: signTex(b.name.toUpperCase(), 384, 90, b.sign || '#1b2028', b.fg || '#ffd37a'), emissiveMap: signTex(b.name.toUpperCase(), 384, 90, b.sign || '#1b2028', b.fg || '#ffd37a'), emissive: 0xffffff, emissiveIntensity: 0.35 }));
-  sg.position.set(sgp.x, H - 0.35, sgp.z); sg.rotation.y = ry; surf.root.add(sg); (surf.signs = surf.signs || []).push(sg);
-  const board = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.15, 0.12), trim); board.position.set(sgp.x - dv[0] * 0.08, H - 0.35, sgp.z - dv[1] * 0.08); board.rotation.y = ry; surf.root.add(board);
-  // porch lamps
-  for (const u of [-DW - 0.5, DW + 0.5]) { const p = P(u, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 0.25); const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffe2a0 })); bulb.position.set(p.x, 2.7, p.z); surf.root.add(bulb); const arm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.28), DARK); arm.position.set(p.x - dv[0] * 0.12, 2.8, p.z - dv[1] * 0.12); arm.rotation.y = ry; surf.root.add(arm); (surf.bulbs = surf.bulbs || []).push(bulb); }
+  // door: casing, double leaves swung open into the room, sloped awning on posts, landing, sign. Everything is measured off the wall faces so nothing overlaps or floats.
+  const wv = (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2;   // wall centre line (v from building centre)
+  const Pv = (u, v) => P(u, wv + v);
+  const bm = (w, h, d, mat, u, y, v, rot = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); const p = Pv(u, v); m.position.set(p.x, y, p.z); m.rotation.y = ry + rot; m.castShadow = true; surf.root.add(m); return m; };
+  const JW = 0.1, OPEN = DW - JW;   // jamb width, clear half-opening
+  bm(JW, 2.4, T + 0.06, trim, -(DW - JW / 2), 1.2, 0); bm(JW, 2.4, T + 0.06, trim, DW - JW / 2, 1.2, 0); bm(DW * 2, 0.1, T + 0.06, trim, 0, 2.45, 0);   // inner jambs + head, 3 cm proud of both wall faces
+  for (const s of [-1, 1]) bm(0.14, 2.64, 0.04, trim, s * (DW + 0.07), 1.32, T / 2 + 0.02); bm(DW * 2 + 0.28, 0.14, 0.04, trim, 0, 2.57, T / 2 + 0.02);   // exterior casing on the facade
+  bm(OPEN * 2, 0.05, T + 0.06, std(0x6a5a48, { roughness: 0.6 }), 0, 0.025, 0);   // threshold plate, flush with the room floor
+  const leafMat = std(b.doorColor ?? 0x4a3a2a, { roughness: 0.7 });
+  for (const s of [-1, 1]) {   // each leaf hinges on its jamb and stands open about 100 degrees, inside the room, clear of the frame
+    const pv = new THREE.Group(); const hp = Pv(s * (OPEN - 0.02), -T / 2 + 0.04); pv.position.set(hp.x, 0.06, hp.z); pv.rotation.y = ry - s * 1.75;
+    const leaf = new THREE.Mesh(new THREE.BoxGeometry(OPEN - 0.04, 2.3, 0.05), leafMat); leaf.position.set(-s * (OPEN - 0.04) / 2, 1.15, 0); pv.add(leaf);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(OPEN - 0.2, 0.9, 0.012), std(0x3a2c1e, { roughness: 0.8 })); rail.position.set(-s * (OPEN - 0.04) / 2, 1.2, 0.03); pv.add(rail);
+    const hdl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.14, 0.04), STEEL); hdl.position.set(-s * (OPEN - 0.14), 1.05, 0.045); pv.add(hdl);
+    pv.traverse(o => o.isMesh && (o.castShadow = true)); surf.root.add(pv);
+  }
+  const AY = 2.76, AS = 0.16, AD = 2.0, AW = DW * 2 + 2.2;   // awning: pivot height at the wall, slope, depth, width
+  { const ag = new THREE.Group(); ag.rotation.order = 'YXZ'; const ap = Pv(0, T / 2 - 0.02); ag.position.set(ap.x, AY, ap.z); ag.rotation.set(AS, ry, 0, 'YXZ');
+    const aw = new THREE.Mesh(new THREE.BoxGeometry(AW, 0.07, AD), std(b.awning ?? 0x7a2a2a, { roughness: 0.8 })); aw.position.set(0, 0, AD / 2); aw.castShadow = true; ag.add(aw);
+    const val = new THREE.Mesh(new THREE.BoxGeometry(AW, 0.12, 0.04), std(b.awning ?? 0x7a2a2a, { roughness: 0.8 })); val.position.set(0, -0.05, AD); ag.add(val);
+    surf.root.add(ag);
+    const pz = AD - 0.16, topY = AY - Math.sin(AS) * pz - 0.04 / 1;   // posts stop just under the sloped underside
+    for (const u of [-DW - 1.0, DW + 1.0]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.06, topY, 8), trim); const p = Pv(u, T / 2 - 0.02 + pz * Math.cos(AS)); post.position.set(p.x, topY / 2, p.z); post.castShadow = true; surf.root.add(post); }
+  }
+  bm(DW * 2 + 0.8, 0.035, 1.9, pm, 0, 0.0175, T / 2 + 0.95 - 0.1).receiveShadow = true;   // landing, flush with the floor line
+  const bigSign = H >= 3.6, signW = bigSign ? 3.4 : 0.95, signH = signW / 4.27;
+  const sY = bigSign ? 2.86 + (H - 0.2 - 2.86) / 2 : 1.75, sU = bigSign ? 0 : -(DW + 0.95), sH = bigSign ? Math.min(0.86, H - 0.2 - 2.86) : signH + 0.1;
+  const sgM = new THREE.MeshStandardMaterial({ map: signTex(b.name.toUpperCase(), 384, 90, b.sign || '#1b2028', b.fg || '#ffd37a'), emissiveMap: signTex(b.name.toUpperCase(), 384, 90, b.sign || '#1b2028', b.fg || '#ffd37a'), emissive: 0xffffff, emissiveIntensity: 0.35 });
+  const bw = bigSign ? sH * 4.27 : signW + 0.1; const sg = new THREE.Mesh(new THREE.PlaneGeometry(bw - 0.12, sH - 0.1), sgM);
+  { const p = Pv(sU, T / 2 + 0.093); sg.position.set(p.x, sY, p.z); sg.rotation.y = ry; surf.root.add(sg); (surf.signs = surf.signs || []).push(sg); }
+  bm(bw, sH, 0.09, trim, sU, sY, T / 2 + 0.045 - 0.01);   // backing board (4 cm of it is buried in the wall so no face is coplanar)
+  // porch lamps: tucked under the awning
+  for (const u of [-DW - 0.55, DW + 0.55]) { const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffe2a0 })); const p = Pv(u, T / 2 + 0.2); bulb.position.set(p.x, 2.3, p.z); surf.root.add(bulb); (surf.bulbs = surf.bulbs || []).push(bulb); bm(0.06, 0.06, 0.2, DARK, u, 2.3, T / 2 + 0.08); }
   // wall details: drain pipe, electrical box, vents
-  { const p = P(b.w / 2 - 0.5 * (b.door === 'n' || b.door === 's' ? 1 : 0) - 0.4, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 0.12); const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, H, 8), STEEL); pipe.position.set(p.x, H / 2, p.z); surf.root.add(pipe); const eb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.15), std(0x7a7e84, { metalness: .5 })); eb.position.set(p.x + sd[0] * -0.9, 1.5, p.z + sd[1] * -0.9); eb.rotation.y = ry; surf.root.add(eb); }
+  { const p = P(b.w / 2 - 0.5 * (b.door === 'n' || b.door === 's' ? 1 : 0) - 0.4, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 0.12); const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, H, 8), STEEL); pipe.position.set(p.x, H / 2, p.z); surf.root.add(pipe); const eb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.15), std(0x7a7e84, { metalness: .5 })); eb.position.set(p.x + sd[0] * -0.9, 0.42, p.z + sd[1] * -0.9); eb.rotation.y = ry; surf.root.add(eb); }
   // (interior lighting is built per room in interiors.js and driven by Surface's pooled lights)
   const door = { x: P(0, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 2.5).x, z: P(0, (b.door === 'n' || b.door === 's' ? b.d : b.w) / 2 + 2.5).z };
   const back = { x: b.x - dv[0] * (b.w / 2 - 2) * (b.door === 'e' || b.door === 'w' ? 1 : 0) - dv[0] * 0, z: b.z - dv[1] * (b.d / 2 - 2) };

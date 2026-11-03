@@ -9,6 +9,7 @@ import { buildHuman, animateHuman, OUTFITS, outfitFor, setOutfit } from './peopl
 import { HeightField, Terrain, Scatter } from './terrain.js';
 import { Sky } from './sky.js';
 import { makeBuilding, dressTown } from './buildings.js';
+import { batchStatic } from './batch.js';
 import { surfMat } from './textures.js';
 import { innerWindowMat } from './interior-kit.js';
 
@@ -35,7 +36,7 @@ export class Surface {
     this.planet = planet; this.sys = sys; this.kind = planet.kind; const K = PLANET_KINDS[planet.kind];
     this.K = K; this.air = planet.air; this.gravity = clamp(planet.g, 0.25, 1.5);
     this.root.clear(); this.colliders = []; this.interactables = []; this.npcs = []; this.nodes = []; this.pickups = []; this.buildings = []; this.nodeTiles.clear(); this.depleted = {};
-    this.windowMats = []; this.windowMatsDark = []; this.blinkers = []; this.bulbs = []; this.signs = []; this.interiorLamps = []; this.roomLamps = []; this.homes = []; this.commons = null; this.lamps = []; this.shipG = null; this.B = null; this.lease = null; this.shop = null; this._bedUsed = null; this.beds = [];
+    this._glassLit = this._glassDark = null; this.windowMats = []; this.windowMatsDark = []; this.blinkers = []; this.bulbs = []; this.signs = []; this.interiorLamps = []; this.roomLamps = []; this.homes = []; this.commons = null; this.lamps = []; this.shipG = null; this.B = null; this.lease = null; this.shop = null; this._bedUsed = null; this.beds = [];
     // a small fixed pool of point lights is moved onto the rooms nearest the player (constant light count = no shader recompiles)
     this.lampPool = []; for (let i = 0; i < 5; i++) { const l = new THREE.PointLight(0xffe2b0, 0, 15, 1.6); l.userData.rec = null; this.root.add(l); this.lampPool.push(l); }
     this.innerGlass = innerWindowMat();   // what you see out of a window from inside
@@ -145,6 +146,7 @@ export class Surface {
 
   building(b) { const rec = makeBuilding(this, b); this.buildings.push(rec); this.footprints.push({ minx: rec.x0 - 0.6, maxx: rec.x1 + 0.6, minz: rec.z0 - 0.6, maxz: rec.z1 + 0.6, top: rec.H + 2.5 }); return rec; }
   buildTown(r) {
+    const n0 = this.root.children.length;   // everything the town adds below is static and gets merged into a few draw calls once it's complete
     const specs = [
       { id: 'exchange', name: 'Rim Exchange', x: -27, z: -31, w: 20, d: 16, door: 's', style: 'brick', color: 0xb5694c, awning: 0x2a5a7a, sign: '#3a2a10' },
       { id: 'gunsmith', name: 'Forge & Barrel', x: 0, z: -31, w: 18, d: 16, door: 's', style: 'metal', color: 0x8a9098, awning: 0x7a2a2a, sign: '#3a1010', fg: '#ff9a6a' },
@@ -167,6 +169,7 @@ export class Surface {
     if (pop >= 120 || bedCount() < nPeople * 2) this.commons = this.building({ id: 'habitat', kind: 'habitat', name: 'Rimway Commons', x: 0, z: 57, w: 28, d: 14, h: 3.4, door: 'n', style: 'concrete', color: 0xb4b0a4, awning: 0x3a5a6a, sign: '#12202a', fg: '#9ae0ff' });
     this.beds = []; for (const h of [...this.homes, ...(this.commons ? [this.commons] : [])]) for (const b of h.beds) this.beds.push({ rec: h, bed: b });
     dressTown(this, r);
+    { const keep = new Set([...this.signs, ...this.bulbs, ...this.blinkers]); const inside = this.buildings.map(b => ({ minx: b.x0 + 0.5, maxx: b.x1 - 0.5, minz: b.z0 + 0.5, maxz: b.z1 - 0.5 })); this.batchInfo = batchStatic(this.root, n0, keep, { noShadowIn: inside }); }
     for (let a = 0; a < 10; a++) { const x = Math.cos(a * 0.628) * 19, z = Math.sin(a * 0.628) * 19; const p = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 4.4, 6), std(0x2a2e34, { metalness: .5 })); p.position.set(x, 2.2, z); p.castShadow = true; this.root.add(p); const arm = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.06), std(0x2a2e34)); arm.position.set(x + 0.4, 4.4, z); this.root.add(arm); const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffe9a8 })); bulb.position.set(x + 0.8, 4.3, z); this.root.add(bulb); this.bulbs.push(bulb); if (a % 2 === 0) { const pl = new THREE.PointLight(0xffd9a0, 0, 22, 1.5); pl.position.set(x + 0.8, 4.1, z); this.root.add(pl); this.lamps.push(pl); } }
     const gs = this.B.gunsmith; this.addBench(gs.back.x - 3, gs.back.z, 'Gunsmith Workbench', 'bench'); this.addBench(gs.back.x + 3, gs.back.z, 'Research Terminal', 'tech', true);
     const ex = this.B.exchange; this.counter(ex, 'Exchange Desk');
@@ -267,7 +270,12 @@ export class Surface {
     this.scatter.setVisible(this.alt < 500);
     if (this.water) { this.water.position.x = cam.position.x; this.water.position.z = cam.position.z; }
     this.updateNodes(p.x, p.z); this.updateRoomLights(p);
-    for (const n of this.npcs) this.updateNPC(n, dt, player);
+    for (const n of this.npcs) {
+      this.updateNPC(n, dt, player);
+      // level of detail: far people don't cast sun shadows, very far ones aren't drawn (each person is ~60 small meshes)
+      const dx = n.mesh.position.x - player.pos.x, dz = n.mesh.position.z - player.pos.z, d2 = dx * dx + dz * dz; const lod = d2 > 130 * 130 ? 2 : d2 > 38 * 38 ? 1 : 0;
+      if (n._lod !== lod) { n._lod = lod; n.mesh.visible = lod < 2; const cs = lod === 0; n.mesh.traverse(o => { if (o.isMesh) o.castShadow = cs; }); }
+    }
     for (const nd of this.nodes) if (!nd.alive) { nd.t = (nd.t || 0) + dt; if (nd.t > 240) { nd.alive = true; nd.m.visible = true; nd.t = 0; nd.hp = 1; } }
   }
 
@@ -313,7 +321,7 @@ export class Surface {
     }
     if (!n.route) this.collide(p, 0.35, 0); p.y = this.heightAt(p.x, p.z); n.mesh.position.copy(p);
     n.gait += sp * dt * 2.9;
-    if (n.asleep && !n.talking) { animateHuman(n.mesh, { ko: true, speed: 0 }); n.mesh.position.y += 0.5; n.moving = false; return; }
+    if (n.asleep && !n.talking) { const bd = n.bed && n.bed.bed; animateHuman(n.mesh, { ko: true, supine: true, speed: 0 }); if (bd && bd.R !== undefined) { n.mesh.rotation.y = bd.R + Math.PI; n.mesh.position.set(bd.x + Math.sin(bd.R) * 0.8, 0.6, bd.z + Math.cos(bd.R) * 0.8); } else n.mesh.position.y += 0.5; n.moving = false; return; }
     animateHuman(n.mesh, { phase: n.gait, speed: sp / 1.7, idleT: n.t, arms: 'relaxed' });
     n.moving = sp > 0.1;
   }
