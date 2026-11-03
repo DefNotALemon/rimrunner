@@ -5,6 +5,7 @@ import { In } from './input.js';
 import { G, toast, quickPull, stowHand, removeItem, count, lvl, xp, addItem, canAdd } from './state.js';
 import { ITEMS, GUN } from './data.js';
 import { buildBackpackMesh, gunMesh, itemMesh } from './models.js';
+import { ASSET } from './assets.js';
 import { buildHuman, animateHuman, setOutfit, OUTFITS, makeLook, GUN_ATTACH } from './people.js';
 import { sfx } from './audio.js';
 
@@ -312,7 +313,7 @@ export class Player {
 
   updateViewmodel(dt, speed, p) {
     const g = G.hand; const id = g ? g.id : null;
-    if (id !== this.holdId) { this.gunHolder.clear(); this.holdId = id; if (id) { const m = gunMesh(id); this.gunHolder.add(m); this.gunMesh = m; } else this.gunMesh = null; this.drawT = 0; }
+    if (id !== this.holdId || this.holdVer !== ASSET.version) { this.gunHolder.clear(); this.holdId = id; this.holdVer = ASSET.version; if (id) { const m = gunMesh(id); this.gunHolder.add(m); this.gunMesh = m; } else this.gunMesh = null; this.drawT = 0; }
     this.view.visible = this.tp < 0.3;
     this.gunUpT = Math.max(0, this.gunUpT - dt);
     const wantUp = (this.aim > 0.2 || this.gunUpT > 0 || this.reloading) ? 1 : 0; this.gunUp = damp(this.gunUp, wantUp, 7, dt);
@@ -345,7 +346,7 @@ export class Player {
     };
     place(this.armR, aR, hR, false); place(this.armL, aL, hL, true);
     const hid = G.held ? G.held.id : null;
-    if (hid !== this.heldId) { this.heldHolder.clear(); this.heldId = hid; if (hid) { const m = itemMesh(hid); m.scale.setScalar(2.2); this.heldHolder.add(m); } }
+    if (hid !== this.heldId || this.heldVer !== ASSET.version) { this.heldHolder.clear(); this.heldId = hid; this.heldVer = ASSET.version; if (hid) { const m = itemMesh(hid); m.scale.setScalar(2.2); this.heldHolder.add(m); } }
     this.heldHolder.visible = !!hid; if (hid) { this.heldHolder.position.copy(hR).add(new THREE.Vector3(0, 0.03, -0.02)); this.heldHolder.rotation.set(-0.5, 0.5 + Math.sin(G.time * 0.6) * 0.08, 0); }
   }
 
@@ -357,7 +358,7 @@ export class Player {
     if (this.beam.visible && !gun) { J.armR.rotation.x = 1.3; J.elbowR.rotation.x = 0.3; }
     b.rotation.z = 0; b.rotation.x = 0;
     if (this.lean > 0.01) { const L = this.lean; if (this.leanKind === 'right') b.rotation.z = -0.16 * L; else if (this.leanKind === 'left') b.rotation.z = 0.16 * L; else if (this.leanKind === 'back') { J.spine.rotation.x += 0.1 * L; J.legR.rotation.x -= 0.5 * L; J.kneeR.rotation.x -= 0.6 * L; } else J.spine.rotation.x -= 0.2 * L; J.legR.rotation.z -= 0.08 * L; }
-    if (gun && this.bodyGunId !== gun.id) { if (this.bodyGunMesh) this.bodyGunMesh.parent && this.bodyGunMesh.parent.remove(this.bodyGunMesh); this.bodyGunMesh = GUN_ATTACH(gunMesh(gun.id)); J.handR.add(this.bodyGunMesh); this.bodyGunId = gun.id; }
+    if (gun && (this.bodyGunId !== gun.id || this.bodyGunVer !== ASSET.version)) { this.bodyGunVer = ASSET.version; if (this.bodyGunMesh) this.bodyGunMesh.parent && this.bodyGunMesh.parent.remove(this.bodyGunMesh); this.bodyGunMesh = GUN_ATTACH(gunMesh(gun.id)); J.handR.add(this.bodyGunMesh); this.bodyGunId = gun.id; }
     else if (!gun && this.bodyGunMesh) { this.bodyGunMesh.parent && this.bodyGunMesh.parent.remove(this.bodyGunMesh); this.bodyGunMesh = null; this.bodyGunId = null; }
     // the backpack: on the shoulder, or lowered to the floor in front of you
     this.pack3.visible = this.packT < 0.04; this.syncPack3();
@@ -374,7 +375,7 @@ export class Player {
   applyOutfitColors() { const o = G.outfit; if (!o) return; this.sleeve.color.set(o.top ? o.top.color : this.look.skin); }
   wear(outfit) { G.outfit = JSON.parse(JSON.stringify(outfit)); setOutfit(this.body, G.outfit); this.applyOutfitColors(); }
   syncPack3() {
-    const sig = G.pack.sides.map(s => s ? s.id : '-').join(',') + G.pack.tier; if (sig === this._packSig) return; this._packSig = sig;
+    const sig = G.pack.sides.map(s => s ? s.id : '-').join(',') + G.pack.tier + ASSET.version; if (sig === this._packSig) return; this._packSig = sig;
     const sides = this.pack3.userData.sides; sides.forEach(s => s.clear());
     G.pack.sides.forEach((g, i) => { if (!g) return; const m = gunMesh(g.id); m.rotation.set(Math.PI / 2 + 0.1, 0, 0); m.rotation.y = 0; m.scale.setScalar(0.9); m.position.y = -0.1; sides[i].add(m); });
     this.pack3.scale.setScalar(1.35 + G.pack.tier * 0.08);

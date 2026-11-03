@@ -7,6 +7,7 @@ import { itemMesh, gunMesh } from './models.js';
 import { In } from './input.js';
 import { sfx } from './audio.js';
 import { fmt } from './util.js';
+import { ASSET } from './assets.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 // one hand, one thing: guns live in G.hand (the rest of the game expects that), anything else in G.held
@@ -109,7 +110,7 @@ export class PackWorld {
 
   // ------ items as physical objects ------
   refreshItems() {
-    const P = G.pack; const sig = JSON.stringify([P.front, P.back, P.sides, P.pocket, P.tier, HAND.v && HAND.v.id, this.lootCtx && this.lootCtx.items]); if (sig === this.sig) return; this.sig = sig;
+    const P = G.pack; const sig = JSON.stringify([P.front, P.back, P.sides, P.pocket, P.tier, ASSET.version, HAND.v && HAND.v.id, this.lootCtx && this.lootCtx.items]); if (sig === this.sig) return; this.sig = sig;
     for (const it of this.items) it.parent && it.parent.remove(it); this.items = []; this.clusterHits && this.clusterHits.forEach(h => { h.parent && h.parent.remove(h); const k = this.pads.indexOf(h); if (k >= 0) this.pads.splice(k, 1); }); this.clusterHits = [];
     const place = (entry, parent, x, z, rot = 0, big = false) => {
       const g = new THREE.Group(); g.position.set(x, 0.01, z); parent.add(g); this.items.push(g);

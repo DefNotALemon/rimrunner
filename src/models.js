@@ -1,5 +1,6 @@
 // Procedural models: planets of many shapes, ships, squad-car police cruisers, people
 import * as THREE from '../vendor/three.module.js';
+import { gunModel, itemModel } from './assets.js';
 import { rng, fbm, noise3 } from './util.js';
 import { PLANET_KINDS, ITEMS } from './data.js';
 
@@ -94,7 +95,7 @@ export function buildPlayerShip() {
   for (const s of [-1, 1]) {
     const w = mesh(new THREE.BoxGeometry(6, 0.25, 3.6), accent); w.position.set(s * 4, -0.2, 1.6); w.rotation.z = s * -0.08; g.add(w);
     const e = mesh(new THREE.CylinderGeometry(0.7, 0.9, 3, 12), dark); e.rotation.x = Math.PI / 2; e.position.set(s * 2.4, -0.2, 4.4); g.add(e);
-    const f = mesh(new THREE.ConeGeometry(0.62, 3, 12), new THREE.MeshBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.85 })); f.rotation.x = -Math.PI / 2; f.position.set(s * 2.4, -0.2, 7.2); f.name = 'flame'; g.add(f);
+    const f = mesh(new THREE.ConeGeometry(0.62, 3, 12), new THREE.MeshBasicMaterial({ color: 0x66ccff, transparent: true, opacity: 0.85, depthWrite: false })); f.rotation.x = -Math.PI / 2; f.position.set(s * 2.4, -0.2, 7.2); f.name = 'flame'; g.add(f);
   }
   const fin = mesh(new THREE.BoxGeometry(0.2, 2, 2.5), accent); fin.position.set(0, 1.6, 3.5); g.add(fin);
   g.userData.radius = 8; return g;
@@ -170,6 +171,7 @@ export function buildBackpackMesh() {
 }
 
 export function gunMesh(id, q = 1) {
+  { const m = gunModel(id); if (m) return m; }   // real CC0 glTF once loaded, procedural stand-in until then
   const g = new THREE.Group(); const metal = std(0x30343a, { metalness: 0.7, roughness: 0.35 });
   const col = std(new THREE.Color(id === 'arc' ? 0x2a4a5a : 0x3a3f46), { metalness: 0.7, roughness: 0.35 });
   const add = (w, h, d, x, y, z, m = metal) => { const b = mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); g.add(b); return b; };
@@ -185,6 +187,7 @@ export function gunMesh(id, q = 1) {
 // ---- little 3D models for every inventory item (about 5-12 cm, real scale) ----
 export function itemMesh(id) {
   const it = ITEMS[id]; if (it.kind === 'gun') return gunMesh(id);
+  { const m = itemGlb(id, it); if (m) return m; }
   const g = new THREE.Group(); const col = new THREE.Color(it.color);
   const mat = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, metalness: 0.1, ...o });
   const add = (geo, m, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.rotation.set(rx, ry, rz); me.castShadow = true; g.add(me); return me; };
@@ -212,4 +215,17 @@ export function itemMesh(id) {
       rock(0.04, 0.035); rock(0.026, 0.02, 0.05, 0.02);
   }
   g.userData.id = id; return g;
+}
+
+// ores/exotics -> scanned rock meshes tinted by the ore colour; ammo/food/water/fuel -> real prop models
+const ROCKS = ['_rockA', '_rockB', '_rockC', '_rockD'];
+function itemGlb(id, it) {
+  let h = 0; for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  if (it.cat === 'ore' || it.cat === 'exotic') {
+    const m = itemModel(ROCKS[h % 4], new THREE.Color(1, 1, 1).lerp(new THREE.Color(it.color), 0.8).getHex());
+    if (m && id === 'hymnstone') m.traverse(o => { if (o.isMesh) { o.material.emissive = new THREE.Color(it.color); o.material.emissiveIntensity = 0.5; } });
+    return m;
+  }
+  if (id === 'ammo' || id === 'ration' || id === 'water' || id === 'fuel') return itemModel(id);
+  return null;
 }

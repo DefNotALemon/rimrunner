@@ -55,7 +55,7 @@ export function makeBuilding(surf, b) {
     const g = new THREE.ExtrudeGeometry(sh, { depth: len + 1.0, bevelEnabled: false }); g.translate(0, 0, -(len + 1.0) / 2);
     const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 0.35, uv.getY(i) * 0.35);
     const roof = new THREE.Mesh(g, surfMat('roof', b.roof ?? 0x6a3a2a)); roof.position.set(b.x, H + 0.03, b.z); if (longX) roof.rotation.y = Math.PI / 2; roof.castShadow = true; roof.receiveShadow = true; surf.root.add(roof);
-    const rl = rise; if (r() < 0.8) { const ch = K.box(b.x + (r() - .5) * b.w * .4 - .3, b.x + (r() - .5) * b.w * .4 + .3, H, H + rise + 0.9, b.z - .3 + (r() - .5) * b.d * .3, b.z + .3 + (r() - .5) * b.d * .3, surfMat('brick', 0x8a4a3a)); void ch; void rl; }
+    const rl = rise; if (r() < 0.8) { const cx = b.x + (r() - .5) * b.w * .4, cz = b.z + (r() - .5) * b.d * .3; const ch = K.box(cx - .3, cx + .3, H, H + rise + 0.9, cz - .3, cz + .3, surfMat('brick', 0x8a4a3a)); void ch; void rl; }
   } else {
     K.box(x0 - 0.35, x1 + 0.35, H + 0.03, H + 0.3, z0 - 0.35, z1 + 0.35, surfMat('concrete', 0x7a7c80));
     const pa = 0.55; K.box(x0 - 0.35, x1 + 0.35, H + 0.3, H + 0.3 + pa, z0 - 0.35, z0 - 0.2, wallMat); K.box(x0 - 0.35, x1 + 0.35, H + 0.3, H + 0.3 + pa, z1 + 0.2, z1 + 0.35, wallMat); K.box(x0 - 0.35, x0 - 0.2, H + 0.3, H + 0.3 + pa, z0, z1, wallMat); K.box(x1 + 0.2, x1 + 0.35, H + 0.3, H + 0.3 + pa, z0, z1, wallMat);

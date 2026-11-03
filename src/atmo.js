@@ -21,7 +21,7 @@ export class Atmo {
   // arriving from orbit: high over the approach side, heading for the settlement
   enterFromSpace(heading, outDir) {
     this.attach(); const h = V(heading.x, 0, heading.z); if (h.lengthSq() < 0.01) h.set(1, 0, 0); h.normalize();
-    const s = this.ship; s.pos.set(-h.x * 3600, 2900, -h.z * 3600); s.speed = 330; s.throttle = 0.6; s.vy = 0; this.outDir.copy(outDir); this.state = 'flying';
+    const s = this.ship; s.pos.set(-h.x * 3600, 3400, -h.z * 3600); s.speed = 330; s.throttle = 0.6; s.vy = 0; this.outDir.copy(outDir); this.state = 'flying';
     const fwd = V(h.x, -0.2, h.z).normalize(); s.quat.setFromRotationMatrix(new THREE.Matrix4().lookAt(V(), fwd.clone().negate(), V(0, 1, 0)));
     this.camera.position.copy(s.pos).add(V(0, 8, 30));
   }

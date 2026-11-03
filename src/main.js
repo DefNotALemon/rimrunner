@@ -19,6 +19,8 @@ import { pickContract } from './ships.js';
 import { ITEMS } from './data.js';
 import { fmt, clamp } from './util.js';
 import { auditScene } from './audit.js';
+import { preloadAssets, ASSET } from './assets.js';
+preloadAssets();   // CC0 glTF guns/items; procedural stand-ins show until each file arrives
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
@@ -67,6 +69,7 @@ const atmo = new Atmo(camera, surf, {
 R.atmo = atmo;
 // audit hooks (read-only): __rr.audit() reports glitch classes for the scene currently shown; __rr.go('space'|'atmo'|'foot'|'jail') jumps modes for testing
 R.curScene = () => mode === 'space' ? space.scene : mode === 'atmo' || mode === 'foot' ? surf.scene : mode === 'jail' ? jail.scene : mode === 'extract' ? xs.scene : titleSpace ? titleSpace.scene : null;
+R.assets = ASSET;
 R.audit = (sc) => auditScene(sc || R.curScene(), camera, renderer, mode);
 R.go = (m) => {
   if (m === 'space') { sys = sys || systemAt(G.seed, G.sysIndex || 0); if (mode === 'atmo') atmo.detach(); space.enter(sys, { planetIndex: 0 }); mode = 'space'; started = true; ui.setHint('space'); player.view.visible = false; }
@@ -337,7 +340,7 @@ function renderTitle(dt) {
   if (!titleSpace) { titleSpace = new Space(camera, { land() { }, hail() { }, closeHail() { }, jail() { }, disabled() { } }); titleSpace.enter(systemAt(G.seed, 0), { planetIndex: 1 }); titleSpace.ship.throttle = 0; }
   titleT += dt; titleSpace.ship.speed = 0; titleSpace.model.visible = true; camera.fov = 60;
   const po = titleSpace.planetObjs[1]; const a = titleT * 0.05; camera.position.copy(po.pos).add(new THREE.Vector3(Math.cos(a) * po.collR * 2.6, po.collR * 0.5, Math.sin(a) * po.collR * 2.6)); camera.lookAt(po.pos); camera.updateProjectionMatrix(); camera.updateMatrixWorld(true);
-  titleSpace.stars.position.copy(camera.position); titleSpace.neb.position.copy(camera.position); titleSpace.model.visible = false; titleSpace.streaks.visible = false;
+  titleSpace.neb.position.copy(camera.position); titleSpace.model.visible = false; titleSpace.streaks.visible = false;
   Look.render(titleSpace.scene, camera, dt);
 }
 requestAnimationFrame(frame);

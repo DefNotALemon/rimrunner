@@ -1,9 +1,11 @@
 // Sky dome: gradient atmosphere, sun, clouds, stars; fades to space with altitude
 import * as THREE from '../vendor/three.module.js';
+import { STAR_GLSL, NEB } from './starfield.js';
 
 const frag = `
+${STAR_GLSL}
 varying vec3 vDir;
-uniform vec3 uSun; uniform vec3 uSky; uniform vec3 uHor; uniform float uSpace; uniform float uDay; uniform float uTime; uniform float uCloud; uniform float uAir; uniform vec3 uSunCol;
+uniform vec3 uSun; uniform vec3 uSky; uniform vec3 uHor; uniform float uSpace; uniform float uDay; uniform float uTime; uniform float uCloud; uniform float uAir; uniform vec3 uSunCol; uniform vec3 uNeb1; uniform vec3 uNeb2;
 float h31(vec3 p){ p = fract(p*0.3183099+.1); p *= 17.0; return fract(p.x*p.y*p.z*(p.x+p.y+p.z)); }
 float h21(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
 float n2(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h21(i),h21(i+vec2(1,0)),f.x),mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x),f.y); }
@@ -32,11 +34,10 @@ void main(){
     cc = mix(cc, vec3(1.0,0.6,0.35)*shade, tw*0.5);
     col = mix(col, cc, cov * smoothstep(0.02,0.25,el) * 0.9);
   }
-  vec3 sp = floor(d*320.0);
-  float st = step(0.9965, h31(sp)) * (0.5+0.5*h31(sp+3.0));
+  vec3 stars = starField(d);
   float starVis = clamp(1.0 - day*uAir*1.25, 0.0, 1.0);
-  vec3 space = vec3(0.004,0.005,0.012) + vec3(st)*vec3(1.0,0.95,0.9);
-  col += vec3(st) * starVis * (1.0-uSpace);
+  vec3 space = vec3(0.004,0.005,0.012) + nebulaField(d, uNeb1, uNeb2) + stars;
+  col += stars * starVis * (1.0-uSpace);
   col = mix(col, space, uSpace);
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -45,7 +46,7 @@ export class Sky {
   constructor() {
     this.mat = new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false,
-      uniforms: { uSun: { value: new THREE.Vector3(0, 1, 0) }, uSky: { value: new THREE.Color(0x5a8fd8) }, uHor: { value: new THREE.Color(0xbcd6f0) }, uSpace: { value: 0 }, uDay: { value: 1 }, uTime: { value: 0 }, uCloud: { value: 0.5 }, uAir: { value: 1 }, uSunCol: { value: new THREE.Color(1, .92, .75) } },
+      uniforms: { uSun: { value: new THREE.Vector3(0, 1, 0) }, uSky: { value: new THREE.Color(0x5a8fd8) }, uHor: { value: new THREE.Color(0xbcd6f0) }, uSpace: { value: 0 }, uDay: { value: 1 }, uTime: { value: 0 }, uCloud: { value: 0.5 }, uAir: { value: 1 }, uNeb1: { value: NEB.c1 }, uNeb2: { value: NEB.c2 }, uSunCol: { value: new THREE.Color(1, .92, .75) } },
       vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position.z = gl_Position.w*0.99999; }',
       fragmentShader: frag,
     });
@@ -59,7 +60,7 @@ export class Sky {
   }
   update(camPos, sunDir, day, alt, time) {
     const u = this.mat.uniforms; this.mesh.position.copy(camPos); u.uSun.value.copy(sunDir); u.uDay.value = day; u.uTime.value = time;
-    u.uSpace.value = this.air > 0.3 ? Math.min(1, Math.max(0, (alt - 2500) / 3500)) : 1;
+    u.uSpace.value = this.air > 0.3 ? Math.min(1, Math.max(0, (alt - 700) / 2900)) : 1;
     u.uSunCol.value.set(1, 0.92 - (1 - day) * 0.3, 0.75 - (1 - day) * 0.3);
   }
 }

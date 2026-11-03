@@ -1,5 +1,6 @@
 // Space: system scene, ship flight, spaceways (lanes), traffic, police and the law
 import * as THREE from '../vendor/three.module.js';
+import { makeSpaceDome } from './starfield.js';
 import { rng, clamp, damp, fmt } from './util.js';
 import { In } from './input.js';
 import { G, toast, lvl, xp } from './state.js';
@@ -24,23 +25,8 @@ export class Space {
     this.disabled = false;
   }
   _mkStars() {
-    const r = rng(77), n = 5000, pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      const u = r() * 2 - 1, t = r() * Math.PI * 2, s = Math.sqrt(1 - u * u), R = 600000;
-      pos.set([s * Math.cos(t) * R, u * R, s * Math.sin(t) * R], i * 3); const b = 0.5 + r() * 0.5; col.set([b, b, b * (0.8 + r() * 0.3)], i * 3);
-    }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    this.stars = new THREE.Points(g, new THREE.PointsMaterial({ size: 2.2, vertexColors: true, sizeAttenuation: false, depthWrite: false, fog: false }));
-    this.stars.frustumCulled = false; this.scene.add(this.stars);
-    this.neb = new THREE.Mesh(new THREE.SphereGeometry(550000, 24, 16), new THREE.ShaderMaterial({
-      side: THREE.BackSide, depthWrite: false, uniforms: { c1: { value: new THREE.Color(0x401060) }, c2: { value: new THREE.Color(0x103060) } },
-      vertexShader: 'varying vec3 p; void main(){ p = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-      fragmentShader: `varying vec3 p; uniform vec3 c1; uniform vec3 c2;
-        float h(vec3 q){ return fract(sin(dot(q, vec3(12.9898,78.233,37.719)))*43758.5453); }
-        float n(vec3 q){ vec3 i=floor(q), f=fract(q); f=f*f*(3.-2.*f); return mix(mix(mix(h(i),h(i+vec3(1,0,0)),f.x),mix(h(i+vec3(0,1,0)),h(i+vec3(1,1,0)),f.x),f.y),mix(mix(h(i+vec3(0,0,1)),h(i+vec3(1,0,1)),f.x),mix(h(i+vec3(0,1,1)),h(i+vec3(1,1,1)),f.x),f.y),f.z); }
-        void main(){ float a = n(p*2.2)*.55+n(p*4.4)*.3+n(p*9.)*.15; a = smoothstep(.45,.95,a); gl_FragColor = vec4(mix(c1,c2,n(p*1.3))*a*.55, 1.); }`
-    }));
-    this.neb.frustumCulled = false; this.scene.add(this.neb);
+    // single camera-locked dome (stars + nebula) shared with sky.js; `stars` kept as an inert alias for older callers
+    this.neb = makeSpaceDome(); this.scene.add(this.neb); this.stars = new THREE.Object3D();
   }
   _mkStreaks() {
     this.nStreak = 260; const g = new THREE.BufferGeometry(); this.streakPos = new Float32Array(this.nStreak * 6);
@@ -161,8 +147,8 @@ export class Space {
     this.model.position.copy(s.pos); this.model.quaternion.copy(s.quat);
     this.model.rotateZ(-s.roll * 0.35); this.model.visible = !this.cockpit;
     this.model.traverse(o => { if (o.name === 'flame') o.scale.set(1, 1 + clamp(s.speed / 600, 0, 3) * (0.8 + Math.random() * 0.4), 1); });
-    this.stars.position.copy(s.pos); this.neb.position.copy(s.pos);
     this.updateCamera(dt); this.updateStreaks(dt);
+    this.neb.position.copy(this.camera.position);   // locked to the camera AFTER it moves, so the sky never swims
     Object.assign(H, {
       speed, limit, inLane: lane, fuel: G.fuel, hull: G.hull, throttle: s.throttle, boost: s.boost, nearName: near ? near.p.name : '', alt: nd, canLand,
       nearKind: near ? `${near.p.kind} ${near.p.shape}` : '', settled: !!(near && near.p.settled), heat: G.heat, law: this.law.state, cops: this.cops.length, disabled: this.disabled,
