@@ -178,12 +178,26 @@ document.getElementById('debugstart')?.addEventListener('click', () => startGame
 if (location.search.includes('autostart')) { setTimeout(() => startGame(false), 200); R.forceActive = true; }
 
 // ---------- interaction ----------
+// true if a wall-height collider blocks the line from the player's chest to the target (so you can't loot through walls)
+function wallBetween(S, ax, az, bx, bz) {
+  for (const c of S.colliders || []) {
+    if (!(c.maxy >= 1.8)) continue;
+    if (ax > c.minx && ax < c.maxx && az > c.minz && az < c.maxz) continue; if (bx > c.minx && bx < c.maxx && bz > c.minz && bz < c.maxz) continue;
+    let t0 = 0, t1 = 1; const dx = bx - ax, dz = bz - az;
+    for (const [o, d, lo, hi] of [[ax, dx, c.minx, c.maxx], [az, dz, c.minz, c.maxz]]) {
+      if (Math.abs(d) < 1e-9) { if (o < lo || o > hi) { t0 = 2; break; } continue; }
+      let a = (lo - o) / d, b = (hi - o) / d; if (a > b) [a, b] = [b, a]; t0 = Math.max(t0, a); t1 = Math.min(t1, b); if (t0 > t1) break;
+    }
+    if (t0 <= t1) return true;
+  }
+  return false;
+}
 function nearestInteract() {
   const S = mode === 'jail' ? jail : mode === 'extract' ? xs : surf; const eye = new THREE.Vector3(player.pos.x, player.pos.y + 1.6, player.pos.z); const f = player.camForward(); let best = null, bs = 1e9;
   for (const it of S.interactables) {
     const dx = it.pos.x - player.pos.x, dz = it.pos.z - player.pos.z, d = Math.hypot(dx, dz); if (d > it.r + 0.3 || Math.abs(it.pos.y - player.pos.y) > 3.5) continue;
     const to = new THREE.Vector3(dx, 0, dz).normalize(); const facing = d < 1.6 ? 1 : f.clone().setY(0).normalize().dot(to);
-    if (facing < 0.1) continue; const sc = d - facing * 1.5; if (sc < bs) { bs = sc; best = { it }; }
+    if (facing < 0.1) continue; if (it.container && wallBetween(S, player.pos.x, player.pos.z, it.pos.x, it.pos.z)) continue; const sc = d - facing * 1.5; if (sc < bs) { bs = sc; best = { it }; }
   }
   for (const n of S.npcs) {
     if (n.customer) continue; const dx = n.pos.x - player.pos.x, dz = n.pos.z - player.pos.z, d = Math.hypot(dx, dz);
