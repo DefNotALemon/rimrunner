@@ -2,16 +2,16 @@
 const KEYS = {
   jump: ['Space'], sprint: ['ShiftLeft', 'ShiftRight'], crouch: ['KeyC', 'ControlLeft'], interact: ['KeyE'], pack: ['Tab'],
   focus: ['KeyQ'], holster: ['KeyH'], reload: ['KeyR'], journal: ['KeyJ'], map: ['KeyM'], land: ['KeyL'], drive: ['KeyK'],
-  q1: ['Digit1'], q2: ['Digit2'], q3: ['Digit3'], q4: ['Digit4'], back: ['Escape'], use: ['KeyG'], tech: ['KeyT'], view: ['KeyV'],
+  q1: ['Digit1'], q2: ['Digit2'], q3: ['Digit3'], q4: ['Digit4'], back: ['Escape'], use: ['KeyG'], tech: ['KeyT'], view: ['KeyV'], antenna: ['KeyB'],
 };
-const PAD = { jump: 0, crouch: 1, interact: 2, pack: 3, focus: 4, holster: 5, aim: 6, fire: 7, map: 8, journal: 9, sprint: 10, land: 11, view: 11, q1: 12, q2: 15, q3: 13, q4: 14 };
+const PAD = { jump: 0, crouch: 1, interact: 2, pack: 3, focus: 4, holster: 5, aim: 6, fire: 7, map: 8, journal: 9, sprint: 10, land: 11, view: 11, q1: 12, q2: 15, q3: 13, q4: 14, antenna: 12 };
 const PADNAMES = {
   xbox:   { 0: 'A', 1: 'B', 2: 'X', 3: 'Y', 4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT', 8: 'View', 9: 'Menu', 10: 'L3', 11: 'R3', 12: 'D-Up', 13: 'D-Down', 14: 'D-Left', 15: 'D-Right' },
   ps:     { 0: 'Cross', 1: 'Circle', 2: 'Square', 3: 'Triangle', 4: 'L1', 5: 'R1', 6: 'L2', 7: 'R2', 8: 'Create', 9: 'Options', 10: 'L3', 11: 'R3', 12: 'D-Up', 13: 'D-Down', 14: 'D-Left', 15: 'D-Right' },
   switch: { 0: 'B', 1: 'A', 2: 'Y', 3: 'X', 4: 'L', 5: 'R', 6: 'ZL', 7: 'ZR', 8: '−', 9: '+', 10: 'L-Stick', 11: 'R-Stick', 12: 'Up', 13: 'Down', 14: 'Left', 15: 'Right' },
 };
-const KBNAMES = { jump: 'Space', sprint: 'Shift', crouch: 'C', interact: 'E', pack: 'Tab', focus: 'Q (hold)', holster: 'H', reload: 'R', journal: 'J', map: 'M', land: 'L', drive: 'K', q1: '1', q2: '2', q3: '3', q4: '4', back: 'Esc', use: 'G', tech: 'T', view: 'V', aim: 'Right Mouse', fire: 'Left Mouse' };
-const TOUCHNAMES = { jump: 'JUMP', sprint: 'RUN', crouch: 'DUCK', interact: 'USE', pack: 'PACK', focus: 'FOCUS', holster: 'HOLSTER', reload: 'RELOAD', journal: 'LOG', map: 'MAP', land: 'LAND', drive: 'DRIVE', q1: 'tap option', q2: 'tap option', q3: 'tap option', q4: 'tap option', back: 'BACK', use: 'EAT', tech: 'TECH', view: 'VIEW', aim: 'AIM', fire: 'FIRE' };
+const KBNAMES = { jump: 'Space', sprint: 'Shift', crouch: 'C', interact: 'E', pack: 'Tab', focus: 'Q (hold)', holster: 'H', reload: 'R', journal: 'J', map: 'M', land: 'L', drive: 'K', q1: '1', q2: '2', q3: '3', q4: '4', back: 'Esc', use: 'G', tech: 'T', view: 'V', antenna: 'B', aim: 'Right Mouse', fire: 'Left Mouse' };
+const TOUCHNAMES = { jump: 'JUMP', sprint: 'RUN', crouch: 'DUCK', interact: 'USE', pack: 'PACK', focus: 'FOCUS', holster: 'HOLSTER', reload: 'RELOAD', journal: 'LOG', map: 'MAP', land: 'LAND', drive: 'DRIVE', q1: 'tap option', q2: 'tap option', q3: 'tap option', q4: 'tap option', back: 'BACK', use: 'EAT', tech: 'TECH', antenna: 'RELAY', view: 'VIEW', aim: 'AIM', fire: 'FIRE' };
 
 export const In = {
   scheme: 'kb', brand: 'xbox', down: {}, pressed: {}, move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, locked: false,

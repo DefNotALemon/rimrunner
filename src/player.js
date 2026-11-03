@@ -181,7 +181,7 @@ export class Player {
 
   shoot(g, spec, ctx) {
     this.fireCd = spec.rate; g.mag--; this.gunUpT = 2.5; this.recoil = Math.min(1.6, this.recoil + 0.5 + spec.pellets * 0.04); this.pitch += 0.012 * (1 + spec.pellets * 0.08) * (1 - this.aim * 0.4); this.yaw += (Math.random() - 0.5) * 0.004; this.muzzle = 1;
-    sfx(spec.pellets > 4 ? 'shotgun' : g.id === 'rifle' ? 'rifle' : g.id === 'arc' ? 'laser' : 'shot', 1);
+    sfx(spec.pellets > 4 ? 'shotgun' : g.id === 'rifle' ? 'rifle' : (g.id === 'arc' || g.id.startsWith('pulse') || g.id === 'scatter' || g.id === 'railrifle') ? 'laser' : 'shot', 1);
     const origin = V(this.pos.x, this.pos.y + EYE - 0.05, this.pos.z);
     const dmgMul = (g.q || 1) * (1 + 0.04 * lvl('gunsmith'));
     for (let i = 0; i < spec.pellets; i++) {

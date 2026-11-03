@@ -5,6 +5,13 @@ export const GUN = {
   rifle:    { cls: 'long', dmg: 38, rate: 0.5, mag: 8, spread: 0.004, pellets: 1, range: 220 },
   breacher: { cls: 'long', dmg: 12, rate: 0.9, mag: 6, spread: 0.06, pellets: 10, range: 45 },
   arc:      { cls: 'long', dmg: 16, rate: 0.09, mag: 30, spread: 0.02, pellets: 1, range: 120 },
+  // ported from Space Ranger's ArmsDB (damage/interval/mag/range kept, spread degrees * 0.0055)
+  hpistol:  { cls: 'pistol', dmg: 36, rate: 0.32, mag: 7, spread: 0.014, pellets: 1, range: 140 },
+  shotgun:  { cls: 'long', dmg: 8, rate: 0.85, mag: 6, spread: 0.034, pellets: 9, range: 90 },
+  pulsepistol: { cls: 'pistol', dmg: 17, rate: 0.2, mag: 20, spread: 0.016, pellets: 1, range: 110 },
+  pulsecarbine: { cls: 'long', dmg: 14, rate: 0.1, mag: 40, spread: 0.016, pellets: 1, range: 130 },
+  scatter:  { cls: 'long', dmg: 9, rate: 0.7, mag: 8, spread: 0.04, pellets: 6, range: 70 },
+  railrifle: { cls: 'long', dmg: 85, rate: 0.9, mag: 5, spread: 0.003, pellets: 1, range: 400 },
 };
 
 // kind: res (stacks in flap slots), small (front pocket, unlimited), gun (side mounts / holster slot), food
@@ -43,6 +50,25 @@ export const ITEMS = {
   rifle:   { name: 'Prospector Rifle', kind: 'gun', gun: 'rifle', value: 420, color: '#6d7a68', cat: 'gun' },
   breacher:{ name: 'Breacher Shotgun', kind: 'gun', gun: 'breacher', value: 560, color: '#855a4a', cat: 'gun' },
   arc:     { name: 'Arc Carbine', kind: 'gun', gun: 'arc', value: 1400, color: '#48d6ff', cat: 'gun' },
+  hpistol: { name: 'Heavy Pistol', kind: 'gun', gun: 'hpistol', value: 300, color: '#7d848c', cat: 'gun' },
+  shotgun: { name: 'Pump Shotgun', kind: 'gun', gun: 'shotgun', value: 380, color: '#6e5a40', cat: 'gun' },
+  pulsepistol: { name: 'Pulse Pistol', kind: 'gun', gun: 'pulsepistol', value: 700, color: '#5fd0ff', cat: 'gun' },
+  pulsecarbine: { name: 'Pulse Carbine', kind: 'gun', gun: 'pulsecarbine', value: 1200, color: '#5fd0ff', cat: 'gun' },
+  scatter: { name: 'Scatter Pulse', kind: 'gun', gun: 'scatter', value: 1500, color: '#7ae0ff', cat: 'gun' },
+  railrifle: { name: 'Rail Rifle', kind: 'gun', gun: 'railrifle', value: 2600, color: '#b8c4d0', cat: 'gun' },
+  // extraction-mode loot (value only matters when sold on extraction)
+  drive:   { name: 'Storage Drive', kind: 'small', value: 55, color: '#7fa3c8', cat: 'loot' },
+  core:    { name: 'Server Core', kind: 'small', value: 320, color: '#38e0d0', cat: 'loot' },
+  wafer:   { name: 'Chip Wafer', kind: 'small', value: 95, color: '#b0a8ff', cat: 'loot' },
+  reagent: { name: 'Reagent Vial', kind: 'small', value: 48, color: '#b6ff3a', cat: 'loot' },
+  servo:   { name: 'Servo Actuator', kind: 'small', value: 70, color: '#c0c6d0', cat: 'loot' },
+  ai_core: { name: 'Robot Core', kind: 'small', value: 420, color: '#ff6a3a', cat: 'loot' },
+  barrel:  { name: 'Barrel Blank', kind: 'small', value: 85, color: '#8a9098', cat: 'loot' },
+  schematic: { name: 'Corp Schematic', kind: 'small', value: 260, color: '#e8d27a', cat: 'loot' },
+  keycard: { name: 'Keycard', kind: 'small', value: 120, color: '#ff4a6a', cat: 'loot' },
+  armor_plate: { name: 'Armor Plate', kind: 'small', value: 140, color: '#6a7480', cat: 'loot' },
+  stimpack: { name: 'Stim Pack', kind: 'food', stack: 10, value: 70, color: '#ffa04a', cat: 'med', use: { health: 30, thirst: 15 } },
+  antenna: { name: 'Relay Antenna', kind: 'small', value: 40, color: '#ffe36a', cat: 'tool' },
 };
 
 // Tech tree: the survival-craft upgrade path (Scrap Age -> Exotic).

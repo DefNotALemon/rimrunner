@@ -12,6 +12,9 @@ import { UI } from './ui.js';
 import { PackWorld } from './packworld.js';
 import { Atmo } from './atmo.js';
 import { audioInit, sfx } from './audio.js';
+import { ExtractShip, Meta, metaLoad, metaSave, makeOffers } from './extract.js';
+import { Extraction } from './extract-ui.js';
+import { pickContract } from './ships.js';
 import { ITEMS } from './data.js';
 import { fmt, clamp } from './util.js';
 
@@ -25,8 +28,8 @@ addEventListener('resize', resize); resize();
 initInput(canvas);
 
 const social = new Social();
-let mode = 'title', started = false, surf = new Surface(camera), jail = new Jail(camera), player = new Player(camera), sys = null, planetNow = null, paused = false;
-const R = window.__rr = { G, forceActive: false, get mode() { return mode; }, get player() { return player; }, get surf() { return surf; }, get space() { return space; }, get ui() { return ui; }, get pack() { return pack; }, get jail() { return jail; }, goToJail: (i) => goToJail(i), In, social, camera, renderer };
+let mode = 'title', started = false, surf = new Surface(camera), jail = new Jail(camera), xs = new ExtractShip(camera), player = new Player(camera), sys = null, planetNow = null, paused = false;
+const R = window.__rr = { G, forceActive: false, get mode() { return mode; }, get player() { return player; }, get surf() { return surf; }, get space() { return space; }, get ui() { return ui; }, get pack() { return pack; }, get jail() { return jail; }, goToJail: (i) => goToJail(i), get xs() { return xs; }, get X() { return X; }, Meta, In, social, camera, renderer };
 
 // ---------- hooks for the UI ----------
 function lock() { try { const r = canvas.requestPointerLock?.(); r && r.catch && r.catch(() => {}); } catch (e) {} }
@@ -43,6 +46,12 @@ const ui = new UI(hooks);
 const pack = new PackWorld(camera, { dropItem: (h, pos) => surf.dropItem(h, pos) });
 G.dropped = g => { surf.dropGun(g, { x: player.pos.x + Math.sin(player.yaw) * -1.2, z: player.pos.z + Math.cos(player.yaw) * -1.2 }); };
 
+const X = new Extraction({
+  S: xs, get player() { return player; }, ui, pack, fadeTo, lock,
+  setMode: m => { mode = m; started = true; },
+  resetPack: () => { player.packOpen = false; if (pack.blocking) pack.requestClose(); if (G.held) G.held = null; },
+  toTitle: () => { mode = 'title'; started = false; document.getElementById('title').style.display = ''; },
+});
 const space = new Space(camera, {
   land: (p, out, fwd) => descend(p, out, fwd), hail: h => ui.hail(h), closeHail: () => { ui.closeHail(); if (In.scheme === 'kb') lock(); },
   jail: info => goToJail(info), disabled: () => { toast('Ship disabled! Systems dead…', 'warn'); setTimeout(towed, 3200); },
@@ -131,6 +140,7 @@ function markRich() {
   return nodes[0].id;
 }
 onDeath(() => {
+  if (mode === 'extract') { X.onDeath(); return; }
   if (mode === 'jail') { player.dead = false; G.hp = 50; return; }
   const cops = surf.npcs.some(n => n.prof.cop && n.hostile && !n.dead);
   fadeTo(() => {
@@ -161,12 +171,15 @@ function titleControls() {
 In.onScheme(titleControls); titleControls();
 document.getElementById('newgame').onclick = () => startGame(false);
 const cont = document.getElementById('continue'); if (localStorage.getItem('rimrunner_save_v1')) cont.style.display = 'inline-block'; cont.onclick = () => startGame(true);
+document.getElementById('extraction').onclick = () => { audioInit(); document.getElementById('title').style.display = 'none'; mode = 'hub'; started = true; X.openHub(); };
+R.xstart = (classId = 'server_m', seed = 1234, depth = 0, corpId) => { audioInit(); document.getElementById('title').style.display = 'none'; started = true; R.forceActive = true; X.startRun(pickContract(seed, depth, { classId, corpId })); };
+{ const q = new URLSearchParams(location.search); if (q.has('extract')) { const cl = q.get('class'); setTimeout(() => { if (cl) R.xstart(cl, +(q.get('seed') || 1234), +(q.get('depth') || 0), q.get('corp') || undefined); else document.getElementById('extraction').click(); }, 250); } }
 document.getElementById('debugstart')?.addEventListener('click', () => startGame(false));
 if (location.search.includes('autostart')) { setTimeout(() => startGame(false), 200); R.forceActive = true; }
 
 // ---------- interaction ----------
 function nearestInteract() {
-  const S = mode === 'jail' ? jail : surf; const eye = new THREE.Vector3(player.pos.x, player.pos.y + 1.6, player.pos.z); const f = player.camForward(); let best = null, bs = 1e9;
+  const S = mode === 'jail' ? jail : mode === 'extract' ? xs : surf; const eye = new THREE.Vector3(player.pos.x, player.pos.y + 1.6, player.pos.z); const f = player.camForward(); let best = null, bs = 1e9;
   for (const it of S.interactables) {
     const dx = it.pos.x - player.pos.x, dz = it.pos.z - player.pos.z, d = Math.hypot(dx, dz); if (d > it.r + 0.3 || Math.abs(it.pos.y - player.pos.y) > 3.5) continue;
     const to = new THREE.Vector3(dx, 0, dz).normalize(); const facing = d < 1.6 ? 1 : f.clone().setY(0).normalize().dot(to);
@@ -200,6 +213,7 @@ function doInteract(t) {
   if (t.strip) { stripNPC(t.strip); return; }
   if (t.npc) { if (t.npc.guard) { ui.bubble(t.npc, '"Back to your cell."'); return; } startTalk(t.npc, t.npc.approach && t.npc.pendingQuest ? 'quest' : undefined); return; }
   const it = t.it;
+  if (it.act.startsWith('x')) { X.interact(it); return; }
   switch (it.act) {
     case 'board': if (G.hp > 0) { stowForFlight(); takeOff(); } break;
     case 'wardrobe': { const w = G.wardrobe || []; if (!w.length) { toast('Your wardrobe is empty. Take clothes off people who won\'t miss them.', ''); break; } const next = w.shift(); w.push(JSON.parse(JSON.stringify(G.outfit))); G.wardrobe = w; player.wear(next); toast(`Changed into: ${next.name}.`, 'good'); break; }
@@ -227,7 +241,7 @@ function frame(now) {
   pollInput();
   const P = In.pressed;
   const locked = In.locked || In.scheme !== 'kb' || R.forceActive;
-  if (started) {
+  if (started && mode !== 'hub') {
     if (P.back) { if (ui.modal && ui.modal !== 'closing') ui.closeAll(); else if (pack.blocking) pack.requestClose(); }
     if (!ui.hail_ && mode !== 'title') {
       if (P.pack && (mode === 'foot' || mode === 'jail')) { if (pack.isOpen || pack.phase === 'opening' || pack.phase === 'lowering') pack.requestClose(); else if (pack.phase === 'idle' && !ui.modal) pack.begin(player); }
@@ -239,6 +253,7 @@ function frame(now) {
     const active = locked && !ui.busy && !ui.hail_;
     paused = !locked && mode !== 'title';
     document.body.classList.toggle('paused', paused && !ui.busy && !ui.hail_);
+    if (P.antenna && active && mode === 'extract') xs.placeAntenna(player);
     if (mode === 'space') {
       if (active && P.view) space.cockpit = !space.cockpit;
       space.update(dt, active);
@@ -252,15 +267,16 @@ function frame(now) {
         ui.update(dt, { mode: 'space', player, space: atmo, surf, prompt: atmo.hud.extra || '', camera });
         camera.updateMatrixWorld(true); renderer.render(surf.scene, camera);
       }
-    } else if (mode === 'foot' || mode === 'jail') {
-      const S = mode === 'jail' ? jail : surf;
-      const ctx = { active, npcs: S.npcs, surf: S, hitNPC: (n, d, h) => social.hit(n, d, h, player, S, ui), onMined: () => {} };
+    } else if (mode === 'foot' || mode === 'jail' || mode === 'extract') {
+      const S = mode === 'jail' ? jail : mode === 'extract' ? xs : surf; const xm = mode === 'extract';
+      const act2 = active && !(xm && xs.stunT > 0);
+      const ctx = { active: act2, npcs: xm ? xs.enemies : S.npcs, surf: S, hitNPC: (n, d, h) => xm ? xs.hitEnemy(n, d, h) : social.hit(n, d, h, player, S, ui), onMined: () => {} };
       player.update(dt, ctx);
       if (pack.scene !== S.scene) { if (pack.scene) [pack.group, pack.ring, pack.label].forEach(o => pack.scene.remove(o)); pack.attach(S.scene); }
       camera.updateMatrixWorld(true); pack.update(dt, player, ctx);
-      S.update(dt, player, ui, { release: () => releasePlayer(false), busted: () => bust() });
-      const t = active && !pack.blocking ? nearestInteract() : null;
-      if (active && !pack.blocking) {
+      S.update(dt, player, ui, { release: () => releasePlayer(false), busted: () => bust(), doom: () => X.finish(false, 'The station tore itself apart before you undocked.') });
+      const t = act2 && !pack.blocking ? nearestInteract() : null;
+      if (act2 && !pack.blocking) {
         if (P.interact && t) doInteract(t);
         for (let i = 0; i < 4; i++) if (P['q' + (i + 1)] && player.focus > 0.5) ui.quick(i);
         if (P.use && !P.interact) player.eatNow();
@@ -274,10 +290,11 @@ function frame(now) {
       }
       let prompt = pack.isOpen ? (pack.hover ? '' : '') + `<small><kbd>${In.label('interact')}</kbd> take / place · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('interact')}</kbd> whole stack · <kbd>${In.label('reload')}</kbd> drop · <kbd>${In.label('holster')}</kbd> stow · <kbd>${In.label('pack')}</kbd> close</small>` : ''; if (t && !ui.focusNpc) prompt = t.choke ? `<kbd>${In.label('interact')}</kbd> Choke out (they can't see you)` : t.strip ? `<kbd>${In.label('interact')}</kbd> Take their clothes (${esc(t.strip.prof.outfit.name)})` : t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
       if (mode === 'jail') prompt = prompt || `<small>Sentence: ${Math.ceil(jail.timeLeft)}s</small>`; if (mode === 'jail' && jail.maxAlert > 0.05) prompt += ` <span class="alert">GUARD SUSPICIOUS ${(jail.maxAlert * 100) | 0}%</span>`;
-      ui.update(dt, { mode: mode === 'jail' ? 'foot' : mode, player, space, surf: mode === 'jail' ? { ...jail, planet: { ...jail.planet, name: 'Rimway Holding', kind: 'facility' }, air: 1 } : surf, prompt, camera });
+      ui.update(dt, { mode: mode === 'jail' || xm ? 'foot' : mode, player, space, surf: xm ? xs : mode === 'jail' ? { ...jail, planet: { ...jail.planet, name: 'Rimway Holding', kind: 'facility' }, air: 1 } : surf, prompt, camera });
+      if (xm) X.updateHud(player);
       renderer.render(S.scene, camera);
     }
-  } else { renderTitle(dt); }
+  } else { renderTitle(dt); if (mode === 'hub') X.hubNav(); }
   In.consume();
   requestAnimationFrame(frame);
 }

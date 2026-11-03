@@ -173,7 +173,7 @@ export function gunMesh(id, q = 1) {
   const g = new THREE.Group(); const metal = std(0x30343a, { metalness: 0.7, roughness: 0.35 });
   const col = std(new THREE.Color(id === 'arc' ? 0x2a4a5a : 0x3a3f46), { metalness: 0.7, roughness: 0.35 });
   const add = (w, h, d, x, y, z, m = metal) => { const b = mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); g.add(b); return b; };
-  if (id === 'pistol') { add(0.035, 0.05, 0.2, 0, 0, -0.1, col); add(0.032, 0.1, 0.045, 0, -0.07, -0.02); }
+  if (id === 'pistol' || id === 'hpistol' || id === 'pulsepistol') { add(0.035, 0.05, 0.2, 0, 0, -0.1, col); add(0.032, 0.1, 0.045, 0, -0.07, -0.02); }
   else if (id === 'coach') { add(0.05, 0.05, 0.34, 0, 0, -0.17); add(0.04, 0.09, 0.07, 0, -0.06, 0, std(0x6a4a2a)); }
   else if (id === 'rifle') { add(0.04, 0.06, 0.62, 0, 0, -0.3, col); add(0.045, 0.08, 0.2, 0, -0.01, 0.06, std(0x6a4a2a)); add(0.02, 0.04, 0.18, 0, 0.06, -0.2); }
   else if (id === 'breacher') { add(0.06, 0.07, 0.55, 0, 0, -0.26); add(0.05, 0.09, 0.22, 0, -0.01, 0.08, std(0x6a4a2a)); add(0.07, 0.04, 0.2, 0, -0.05, -0.2, std(0x7a5a3a)); }
@@ -208,7 +208,8 @@ export function itemMesh(id) {
     case 'coil': add(new THREE.TorusGeometry(0.04, 0.012, 8, 20), mat(0x37e6c9, { emissive: 0x1a8a7a, emissiveIntensity: 0.9, metalness: 0.5 }), 0, 0.04, 0, Math.PI / 2); add(new THREE.TorusGeometry(0.028, 0.008, 8, 20), mat(0x888888, { metalness: 0.9 }), 0, 0.04, 0, Math.PI / 2); break;
     case 'tank_ext': add(new THREE.CylinderGeometry(0.035, 0.035, 0.1, 14), mat(0xe85a2b, { metalness: 0.5 }), 0, 0.035, 0, 0, 0, Math.PI / 2); add(new THREE.SphereGeometry(0.035, 12, 8), mat(0xe85a2b, { metalness: 0.5 }), 0.05, 0.035); add(new THREE.SphereGeometry(0.035, 12, 8), mat(0xe85a2b, { metalness: 0.5 }), -0.05, 0.035); break;
     case 'fuel': add(new THREE.CylinderGeometry(0.014, 0.014, 0.11, 8), mat(0x7bff6a, { emissive: 0x2a8a2a, emissiveIntensity: 0.9 }), 0, 0.016, 0, 0, 0, Math.PI / 2); add(new THREE.CylinderGeometry(0.018, 0.018, 0.012, 8), mat(0x333333, { metalness: 0.8 }), 0.05, 0.016, 0, 0, 0, Math.PI / 2); add(new THREE.CylinderGeometry(0.018, 0.018, 0.012, 8), mat(0x333333, { metalness: 0.8 }), -0.05, 0.016, 0, 0, 0, Math.PI / 2); break;
-    default: rock(0.04, 0.035); rock(0.026, 0.02, 0.05, 0.02);
+    default: if (it.cat === 'loot' || it.cat === 'tool') { add(new THREE.BoxGeometry(0.09, 0.04, 0.06), mat(col, { metalness: 0.5, roughness: 0.4, emissive: col, emissiveIntensity: 0.25 }), 0, 0.02); add(new THREE.BoxGeometry(0.03, 0.02, 0.03), mat(0x16161a), 0.02, 0.05, 0); break; }
+      rock(0.04, 0.035); rock(0.026, 0.02, 0.05, 0.02);
   }
   g.userData.id = id; return g;
 }
