@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Rimrunner — Material Lab</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<style>
+  html,body{margin:0;height:100%;background:#0b0d10;color:#dfe6ee;font:13px/1.35 -apple-system,system-ui,sans-serif;overflow:hidden}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+  #bar{position:fixed;left:12px;top:12px;width:300px;background:rgba(12,15,19,.82);backdrop-filter:blur(8px);border:1px solid #2a323c;border-radius:10px;padding:12px}
+  h1{font-size:14px;margin:0 0 8px;letter-spacing:.06em;text-transform:uppercase;color:#8fd3ff}
+  .row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+  button{background:#1b222b;color:#dfe6ee;border:1px solid #333d49;border-radius:6px;padding:5px 9px;cursor:pointer;font:inherit}
+  button.on{background:#2b6ea3;border-color:#5fb2ea;color:#fff}
+  label{display:block;margin:4px 0 2px;color:#8b99a8;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  input[type=range]{width:100%}
+  #blurb{color:#aab6c3;font-size:12px;margin:4px 0 8px;min-height:48px}
+  #stats{position:fixed;right:12px;bottom:10px;color:#6f7d8b;font-size:11px}
+</style></head>
+<body><canvas id="c"></canvas>
+<div id="bar">
+  <h1>Material Lab</h1>
+  <label>Look</label><div class="row" id="looks"></div><div id="blurb"></div>
+  <label>Material source</label><div class="row" id="src"><button data-v="scan">Scanned PBR</button><button data-v="proc">Procedural</button></div>
+  <label>Effects</label><div class="row" id="fx"><button data-v="high">High</button><button data-v="med">Medium</button><button data-v="off">Off</button></div>
+  <label>Time of day <span id="tl"></span></label><input id="tod" type="range" min="0" max="1" step="0.01" value="0.8">
+  <label>View</label><div class="row" id="cams"></div>
+</div>
+<div id="stats">drag = orbit · wheel = zoom · right-drag = pan</div>
+<script type="module" src="src/lab.js"></script></body></html>

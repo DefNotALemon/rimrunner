@@ -1,5 +1,6 @@
 // Planet surface: endless terrain, sky, settlement, resource nodes, people. Also hosts atmospheric flight.
 import * as THREE from '../vendor/three.module.js';
+import { Look } from './look.js';
 import { rng, clamp, lerp, hashStr } from './util.js';
 import { PLANET_KINDS, ITEMS } from './data.js';
 import { G } from './state.js';
@@ -269,7 +270,7 @@ export class Surface {
     if (this.alt < 400) this.scatter.update(cam.position.x, cam.position.z, this.avoidFn);
     this.scatter.setVisible(this.alt < 500);
     if (this.water) { this.water.position.x = cam.position.x; this.water.position.z = cam.position.z; }
-    this.updateNodes(p.x, p.z); this.updateRoomLights(p);
+    this.updateNodes(p.x, p.z); this.updateRoomLights(p); Look.surfaceFrame(this, p);
     for (const n of this.npcs) {
       this.updateNPC(n, dt, player);
       // level of detail: far people don't cast sun shadows, very far ones aren't drawn (each person is ~60 small meshes)

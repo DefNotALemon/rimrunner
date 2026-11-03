@@ -1,6 +1,7 @@
 // Procedural material textures (neutral greys, tinted by material colour) and UV helpers
 import * as THREE from '../vendor/three.module.js';
 import { rng } from './util.js';
+import { Look } from './look.js';
 
 const cache = {};
 function mk(key, w, h, draw, srgb = true) {
@@ -74,8 +75,13 @@ export function boxUV(geo, w, h, d, tile = 2) {
   uv.needsUpdate = true; return geo;
 }
 const matCache = {};
+// New kinds (hull, rust, tile, plaster) only exist as scans; they borrow a procedural stand-in until the sheets arrive.
+const ALIAS = { hull: 'metal', rust: 'metal', tile: 'concrete', plaster: 'concrete' };
 export function surfMat(kind, color, extra = {}) {
   const key = kind + color + JSON.stringify(extra); if (matCache[key]) return matCache[key];
-  const rough = { siding: .85, brick: .9, concrete: .95, metal: .45, roof: .6, floor: .7, asphalt: .95, pavers: .9 }[kind] ?? .8;
-  return matCache[key] = new THREE.MeshStandardMaterial({ map: tex[kind](), color, roughness: rough, metalness: kind === 'metal' ? .55 : .02, ...extra });
+  const pk = tex[kind] ? kind : ALIAS[kind] || 'concrete', map = tex[pk]();
+  const m = new THREE.MeshStandardMaterial({ map, color, roughness: 1, metalness: 0, ...extra });
+  if (!map.userData.pbr) map.userData.pbr = Look.derive(pk, map.image);
+  const p = map.userData.pbr; Look.dress(m, kind, color, { map, normal: p.normal, orm: p.orm });
+  return matCache[key] = m;
 }

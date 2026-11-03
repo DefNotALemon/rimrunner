@@ -12,6 +12,7 @@ import { UI } from './ui.js';
 import { PackWorld } from './packworld.js';
 import { Atmo } from './atmo.js';
 import { audioInit, sfx } from './audio.js';
+import { Look } from './look.js';
 import { ExtractShip, Meta, metaLoad, metaSave, makeOffers } from './extract.js';
 import { Extraction } from './extract-ui.js';
 import { pickContract } from './ships.js';
@@ -22,8 +23,10 @@ const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+Look.init(renderer); Look.onChange = (t, b) => toast(b ? `${t} — ${b}` : t, '');   // materials + lighting + post (src/look.js); F6 look, F7 effects, F8 material source
+addEventListener('keydown', e => { if (e.repeat) return; if (e.code === 'F6') { e.preventDefault(); Look.cycleLook(); } else if (e.code === 'F7') { e.preventDefault(); Look.cycleTier(); } else if (e.code === 'F8') { e.preventDefault(); Look.toggleSource(); } });
 const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 2e6);
-function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+function resize() { renderer.setSize(innerWidth, innerHeight, false); Look.resize(); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 initInput(canvas);
 
@@ -272,14 +275,14 @@ function frame(now) {
       if (active && P.view) space.cockpit = !space.cockpit;
       space.update(dt, active);
       ui.update(dt, { mode, player, space, surf, prompt: space.hud.canLand ? `<kbd>${In.label('land')}</kbd> Land on ${esc(space.hud.nearName)}` : '', camera });
-      camera.updateMatrixWorld(true); renderer.render(space.scene, camera);
+      camera.updateMatrixWorld(true); Look.render(space.scene, camera, dt);
     } else if (mode === 'atmo') {
       if (active && P.view) atmo.cockpit = !atmo.cockpit;
       atmo.update(dt, active);
       if (mode === 'atmo') {
         surf.update(dt, { pos: atmo.ship.pos, yaw: 0 }, ui, {});
         ui.update(dt, { mode: 'space', player, space: atmo, surf, prompt: atmo.hud.extra || '', camera });
-        camera.updateMatrixWorld(true); renderer.render(surf.scene, camera);
+        camera.updateMatrixWorld(true); Look.render(surf.scene, camera, dt);
       }
     } else if (mode === 'foot' || mode === 'jail' || mode === 'extract') {
       const S = mode === 'jail' ? jail : mode === 'extract' ? xs : surf; const xm = mode === 'extract';
@@ -306,7 +309,7 @@ function frame(now) {
       if (mode === 'jail') prompt = prompt || `<small>Sentence: ${Math.ceil(jail.timeLeft)}s</small>`; if (mode === 'jail' && jail.maxAlert > 0.05) prompt += ` <span class="alert">GUARD SUSPICIOUS ${(jail.maxAlert * 100) | 0}%</span>`;
       ui.update(dt, { mode: mode === 'jail' || xm ? 'foot' : mode, player, space, surf: xm ? xs : mode === 'jail' ? { ...jail, planet: { ...jail.planet, name: 'Rimway Holding', kind: 'facility' }, air: 1 } : surf, prompt, camera });
       if (xm) X.updateHud(player);
-      renderer.render(S.scene, camera);
+      Look.render(S.scene, camera, dt);
     }
   } else { renderTitle(dt); if (mode === 'hub') X.hubNav(); }
   In.consume();
@@ -325,6 +328,6 @@ function renderTitle(dt) {
   titleT += dt; titleSpace.ship.speed = 0; titleSpace.model.visible = true; camera.fov = 60;
   const po = titleSpace.planetObjs[1]; const a = titleT * 0.05; camera.position.copy(po.pos).add(new THREE.Vector3(Math.cos(a) * po.collR * 2.6, po.collR * 0.5, Math.sin(a) * po.collR * 2.6)); camera.lookAt(po.pos); camera.updateProjectionMatrix(); camera.updateMatrixWorld(true);
   titleSpace.stars.position.copy(camera.position); titleSpace.neb.position.copy(camera.position); titleSpace.model.visible = false; titleSpace.streaks.visible = false;
-  renderer.render(titleSpace.scene, camera);
+  Look.render(titleSpace.scene, camera, dt);
 }
 requestAnimationFrame(frame);

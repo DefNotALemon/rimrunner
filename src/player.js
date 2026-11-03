@@ -26,7 +26,7 @@ export class Player {
     this.pack3 = buildBackpackMesh(); this.pack3.position.set(0, 0.3, 0.19); this.pack3.scale.setScalar(1.35); this.body.userData.J.spine.add(this.pack3);
     this.packMesh = buildBackpackMesh(); this.packMesh.scale.setScalar(1.7); this.packMesh.visible = false; this.packT = 0; this.gunUp = 0; this.gunUpT = 0;
     this.view = new THREE.Group(); this.cam.add(this.view);
-    this.skin = new THREE.MeshStandardMaterial({ color: this.look.skin, roughness: 0.6 }); this.sleeve = new THREE.MeshStandardMaterial({ color: 0x3a5c3a, roughness: 0.92 });
+    this.skin = new THREE.MeshStandardMaterial({ color: this.look.skin, roughness: 0.6 }); this.sleeve = new THREE.MeshStandardMaterial({ color: 0x3a5c3a, roughness: 0.92 }); this.skin.userData.look = this.sleeve.userData.look = { skip: true };
     const mkArm = () => { const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.029, 1, 10), this.sleeve); fore.geometry.translate(0, 0.5, 0); const hand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.05, 0.1), this.skin); const fing = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.03, 0.05), this.skin); fing.position.set(0, -0.005, -0.07); hand.add(fing); this.view.add(fore, hand); return { fore, hand }; };
     this.armL = mkArm(); this.armR = mkArm(); this.applyOutfitColors();
     this.gunHolder = new THREE.Group(); this.view.add(this.gunHolder);

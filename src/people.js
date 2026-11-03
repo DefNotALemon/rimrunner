@@ -34,7 +34,7 @@ export function outfitFor(job, seed) {
 }
 
 const mats = {};
-const M = (c, o = {}) => { const k = c + JSON.stringify(o); return mats[k] || (mats[k] = new THREE.MeshStandardMaterial({ color: c, roughness: 0.82, metalness: 0, ...o })); };
+const M = (c, o = {}) => { const k = c + JSON.stringify(o); return mats[k] || (mats[k] = Object.assign(new THREE.MeshStandardMaterial({ color: c, roughness: 0.82, metalness: 0, ...o }), { userData: { look: { skip: true } } })); };
 let fabricTex = null;
 function fabric() {
   if (fabricTex) return fabricTex; const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); x.fillStyle = '#e8e8e8'; x.fillRect(0, 0, 64, 64);
@@ -141,7 +141,10 @@ export function setOutfit(h, outfit) {
       const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.158 * B, 0.158 * B, 0.045, 18), M(0x15151a, { roughness: 0.5 })); belt.scale.z = 0.7; belt.position.y = 0.03; add(J.spine, belt);
       const hol = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.07), M(0x15151a)); hol.position.set(0.16 * B, -0.02, 0); add(J.spine, hol);
     }
-    if (t.kind === 'coat') { const sk = new THREE.Mesh(new THREE.CylinderGeometry(0.17 * B, 0.25 * B, 0.5 * S, 16, 1, true), mat); sk.scale.z = 0.7; sk.position.y = -0.2 * S; sk.material = cloth(t.color, { side: THREE.DoubleSide }); add(J.hips, sk); }
+    if (t.kind === 'coat') {   // skirt is two open half-shells riding on the thighs: front/back panels swing and fold with each leg instead of one rigid tube the legs poke through
+      const cm = cloth(t.color, { side: THREE.DoubleSide });
+      for (const s of [-1, 1]) { const hipJ = new THREE.Group(); hipJ.position.set(0, -0.06, 0); J.hips.add(hipJ); U.cloth.push(hipJ); (U.skirt = U.skirt || {})[s < 0 ? 0 : 1] = hipJ; const sk = new THREE.Mesh(new THREE.CylinderGeometry(0.2 * B, 0.27 * B, 0.46 * S, 14, 1, true, s < 0 ? Math.PI - 0.04 : -0.04, Math.PI + 0.08), cm); sk.scale.z = 0.72; sk.position.set(-s * 0.095 * B, 0.11 - 0.23 * S, 0); add(hipJ, sk); }
+    } else U.skirt = null;
     if (t.kind === 'overalls') { for (const s of [-1, 1]) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.34, 0.01), acc); st.position.set(s * 0.07 * B, 0.44, -0.105); st.rotation.z = s * 0.1; add(J.spine, st); } const bib = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.01), mat); bib.position.set(0, 0.28, -0.106); add(J.spine, bib); }
     if (t.kind === 'apron') { const ap = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.46, 0.012), M(t.accent ?? 0xffffff)); ap.position.set(0, 0.2, -0.112); add(J.spine, ap); }
     if (t.kind === 'vest') { const v = new THREE.Mesh(torsoGeo(0.02, fem), cloth(t.color)); v.scale.x = B; v.scale.y = 0.9; add(J.spine, v); const sh = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.01, 6, 12), acc); sh.rotation.x = Math.PI / 2; sh.position.y = 0.55; add(J.spine, sh); }
@@ -194,7 +197,6 @@ export function setOutfit(h, outfit) {
 // o: {phase (radians), speed (0..1.4), crouch (0..1), arms ('relaxed'|'gun'|'lowgun'), aim (0..1), pitch, lean (-1..1), idleT, ko}
 // Leg rig numbers: thigh/shin lengths are in the body's local space; SOLE is how far the boot/foot mesh hangs below the ankle joint.
 const HIP_DROP = 0.06, SOLE = 0.078, TOE = 0.19, HEEL = 0.06;
-function legIK(T, Sh, aC) { return (drop) => { const need = Math.min(T + Sh, Math.max(0.2, T + Sh - drop)); const ca = (need - T * Math.cos(aC)) / Sh; return aC + Math.acos(Math.max(-1, Math.min(1, ca))); }; }   // knee flex that lowers the hips by `drop` with the thigh flexed aC
 export function animateHuman(h, o) {
   if (h.rotation.order !== 'YXZ') h.rotation.order = 'YXZ';   // yaw first, then tip over about the body's own axis
   const J = h.userData.J; const S = h.userData.S || 1; const sp = Math.min(1.3, o.speed || 0), p = o.phase || 0, c = Math.min(1, Math.max(0, o.crouch || 0));
@@ -212,7 +214,8 @@ export function animateHuman(h, o) {
   const amp = 0.46 * sp, flex = 0.1 * Math.min(1, sp);
   const wa = [Math.sin(p) * amp, -Math.sin(p) * amp];
   const wk = [Math.max(0, Math.sin(p + 1.4)) * 1.0 * sp + flex, Math.max(0, Math.sin(p + 1.4 + Math.PI)) * 1.0 * sp + flex];
-  const aC = 0.95, kC = legIK(T, Sh, aC)(0.3);   // crouch pose: thigh flexed, hips 30 cm lower
+  const CD = 0.3, CB = 0.1, hh = T + Sh - CD, Lc = Math.hypot(hh, CB);   // crouch: hip joint 30 cm lower and 10 cm behind the ankles, so the knees travel forward over the toes like a real squat
+  const kC = Math.PI - Math.acos((T * T + Sh * Sh - Lc * Lc) / (2 * T * Sh)), aC = Math.acos((T * T + Lc * Lc - Sh * Sh) / (2 * T * Lc)) + Math.atan2(CB, hh);
   const A = [0, 0], K = [0, 0], F = [0, 0]; let ext = 0;
   for (let i = 0; i < 2; i++) {
     A[i] = wa[i] * (1 - c * 0.7) + aC * c; K[i] = wk[i] * (1 - c) + kC * c;
@@ -221,10 +224,11 @@ export function animateHuman(h, o) {
     ext = Math.max(ext, T * Math.cos(A[i]) + Sh * Math.cos(A[i] - K[i]) + drop - SOLE);
   }
   J.hips.position.y = base - (T + Sh) + ext + Math.sin((o.idleT || 0) * 1.7) * 0.002 * (1 - c);
-  J.hips.position.x = Math.sin(p) * 0.012 * sp; J.hips.position.z = 0;
+  J.hips.position.x = Math.sin(p) * 0.012 * sp; J.hips.position.z = CB * c;
   J.hips.rotation.y = Math.sin(p) * 0.09 * sp; J.hips.rotation.x = c * 0.0; J.hips.rotation.z = 0;
-  J.spine.rotation.x = -c * 0.42 - sp * 0.05; J.spine.rotation.y = -Math.sin(p) * 0.11 * sp; J.spine.rotation.z = 0;
-  J.legL.rotation.x = A[0]; J.legR.rotation.x = A[1]; J.legL.rotation.z = 0.03; J.legR.rotation.z = -0.03;
+  J.spine.rotation.x = -c * 0.36 - sp * 0.05; J.spine.rotation.y = -Math.sin(p) * 0.11 * sp; J.spine.rotation.z = 0;
+  J.legL.rotation.x = A[0]; J.legR.rotation.x = A[1];
+  const sk = h.userData.skirt; if (sk) { sk[0].rotation.x = A[0] * 0.5; sk[1].rotation.x = A[1] * 0.5; }   // coat panels follow the thighs at half angle: they swing and fold instead of staying rigid or barrelling forward J.legL.rotation.z = 0.03; J.legR.rotation.z = -0.03;
   J.kneeL.rotation.x = -K[0]; J.kneeR.rotation.x = -K[1]; J.footL.rotation.x = F[0]; J.footR.rotation.x = F[1];
   const swing = Math.sin(p) * 0.75 * sp;
   const idle = Math.sin((o.idleT || 0) * 1.5) * 0.015;
