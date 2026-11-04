@@ -20,6 +20,7 @@ import { ITEMS } from './data.js';
 import { fmt, clamp } from './util.js';
 import { auditScene } from './audit.js';
 import { Stash } from './stash.js';
+import { WeaponWheel, HOLD_S } from './wheel.js';
 import { preloadAssets, ASSET } from './assets.js';
 preloadAssets();   // CC0 glTF guns/items; procedural stand-ins show until each file arrives
 
@@ -183,7 +184,7 @@ function startGame(cont) {
 }
 function titleControls() {
   const L = a => `<kbd>${In.label(a)}</kbd>`; const stick = In.scheme === 'kb' ? 'Mouse + WASD' : In.scheme === 'pad' ? 'Sticks' : 'Touch sticks';
-  document.getElementById('tcontrols').innerHTML = `<div><b>On foot</b> ${stick} move/look · ${L('sprint')} sprint · ${L('crouch')} crouch · ${L('jump')} jump · hold ${L('focus')} focus on a person · ${L('aim')} aim (draws pistol) · ${L('fire')} fire / mine · ${L('pack')} backpack · ${L('interact')} use · ${L('holster')} holster · ${L('reload')} reload · ${L('view')} view</div>
+  document.getElementById('tcontrols').innerHTML = `<div><b>On foot</b> ${stick} move/look · ${L('sprint')} sprint · ${L('crouch')} crouch · ${L('jump')} jump · hold ${L('focus')} focus on a person · ${L('aim')} aim (draws pistol) · ${L('fire')} fire / mine · tap ${L('pack')} backpack · hold ${L('pack')} weapon wheel · ${L('interact')} use · ${L('holster')} holster · ${L('reload')} reload · ${L('view')} view</div>
   <div><b>Flight</b> ${stick} steer · ${L('sprint')} boost · ${L('jump')} brake · ${L('fire')} fire · ${L('land')} land · ${L('map')} jump map · stay under the spaceway limit</div><div><small>Controls follow whatever you last used (keyboard, gamepad or touch).</small></div>`;
 }
 In.onScheme(titleControls); titleControls();
@@ -267,24 +268,47 @@ function doInteract(t) {
 function stowForFlight() { if (pack.blocking) pack.requestClose(); if (G.held) { addItem(G.held.id, G.held.n || 1); G.held = null; } if (G.hand) stowHand(); }
 
 // ---------- main loop ----------
-let last = performance.now(), lastPrompt = null;
+let last = performance.now(), lastPrompt = null, tabHold = null;
+const wheel = new WeaponWheel();
+wheel.onDraw = () => { if (player.reloading) { player.reloading = false; player.reloadT = 0; addItem('ammo', 1); } };   // swapping guns mid-reload keeps the ammo box
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dtReal = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = dtReal * wheel.timeScale;   // the weapon wheel slows the world down
   pollInput();
   const P = In.pressed;
   const locked = In.locked || In.scheme !== 'kb' || R.forceActive;
   if (started && mode !== 'hub') {
     if (P.back && stash.active) stash.close();
-    if (P.pack && stash.active) stash.close();
     if (P.back) { if (ui.modal && ui.modal !== 'closing') ui.closeAll(); else if (pack.blocking) pack.requestClose(); }
     if (!ui.hail_ && mode !== 'title') {
-      if (P.pack && (mode === 'foot' || mode === 'jail')) { if (pack.isOpen || pack.phase === 'opening' || pack.phase === 'lowering') pack.requestClose(); else if (pack.phase === 'idle' && !ui.modal) pack.begin(player); }
-      if (P.pack && mode === 'space') toast('Ship lockers are opened on foot, from beside your ship.', '');
       if (P.journal) { if (ui.modal === 'journal') ui.closeAll(); else if (!ui.modal) ui.openJournal(); }
       if (P.map && mode === 'space') { if (ui.modal === 'map') ui.closeAll(); else if (!ui.modal) ui.openMap(space, !space.inLane); }
     }
     ui.navigate(); ui.updateLock(dt);
     const active = locked && !ui.busy && !ui.hail_;
+    // pack button: a tap opens/closes the backpack; holding it (out of every menu) opens the weapon wheel
+    const onFoot = mode === 'foot' || mode === 'jail' || mode === 'extract';
+    const inMenu = !!(ui.modal || ui.hail_ || pack.blocking || stash.active);
+    if (P.pack) {
+      tabHold = null;
+      if (wheel.open) wheel.close(false);                        // touch wheel stays open until tapped; PACK again cancels
+      else if (stash.active) stash.close();
+      else if (pack.blocking) { if (pack.isOpen || pack.phase === 'opening' || pack.phase === 'lowering') pack.requestClose(); }
+      else if (!ui.modal && !ui.hail_ && mode !== 'title') tabHold = { t: 0 };
+    }
+    if (tabHold) {
+      if (In.down.pack) {
+        tabHold.t += dtReal;
+        if (!tabHold.wheel && tabHold.t >= HOLD_S) { if (onFoot && active && !inMenu && !player.dead) { wheel.begin(In.scheme === 'touch'); tabHold.wheel = true; } }
+      } else {
+        if (tabHold.wheel) { if (!wheel.sticky) wheel.close(true); }
+        else if ((mode === 'foot' || mode === 'jail') && pack.phase === 'idle' && !ui.modal && !ui.hail_) pack.begin(player);
+        else if (mode === 'space') toast('Ship lockers are opened on foot, from beside your ship.', '');
+        tabHold = null;
+      }
+    }
+    if (wheel.open && (!onFoot || !active || inMenu || player.dead)) { wheel.close(false); tabHold = null; }
+    wheel.update(dtReal);
     paused = !locked && mode !== 'title';
     document.body.classList.toggle('paused', paused && !ui.busy && !ui.hail_);
     if (P.antenna && active && mode === 'extract') xs.placeAntenna(player);
@@ -304,7 +328,7 @@ function frame(now) {
     } else if (mode === 'foot' || mode === 'jail' || mode === 'extract') {
       const S = mode === 'jail' ? jail : mode === 'extract' ? xs : surf; const xm = mode === 'extract';
       const act2 = active && !(xm && xs.stunT > 0);
-      const ctx = { active: act2, npcs: xm ? xs.enemies : S.npcs, surf: S, hitNPC: (n, d, h) => xm ? xs.hitEnemy(n, d, h) : social.hit(n, d, h, player, S, ui), onMined: () => {} };
+      const ctx = { wheel: wheel.open, active: act2, npcs: xm ? xs.enemies : S.npcs, surf: S, hitNPC: (n, d, h) => xm ? xs.hitEnemy(n, d, h) : social.hit(n, d, h, player, S, ui), onMined: () => {} };
       stash.attach(S.scene); stash.update(dt, player, ctx);
       player.update(dt, ctx);
       if (pack.scene !== S.scene) { if (pack.scene) [pack.group, pack.ring, pack.label].forEach(o => pack.scene.remove(o)); pack.attach(S.scene); }

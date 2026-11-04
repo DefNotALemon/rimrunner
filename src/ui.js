@@ -11,7 +11,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
-function gunSVG(id, col) {
+export function gunSVG(id, col) {
   const c = ITEMS[id].color || '#999';
   const shapes = {
     pistol: `<path d="M8 22h30v8H26v14h-9V30H8z" fill="${c}"/>`,
@@ -20,7 +20,9 @@ function gunSVG(id, col) {
     breacher: `<path d="M2 23h52v8H34l-4 14h-9l3-14H2z" fill="${c}"/><rect x="36" y="31" width="18" height="5" fill="#7a5a3a"/>`,
     arc: `<path d="M2 22h52v9H34l-4 14h-9l3-14H2z" fill="${c}"/><rect x="8" y="24" width="30" height="3" fill="#48d6ff"/>`,
   };
-  return `<svg viewBox="0 0 56 56" class="gun">${shapes[id]}</svg>`;
+  const cls = GUN[ITEMS[id].gun]?.cls;   // guns without their own drawing borrow their class's silhouette
+  const shape = shapes[id] || (cls === 'pistol' ? shapes.pistol : cls === 'smallshotgun' ? shapes.coach : /pulse|arc|scatter/.test(id) ? shapes.arc : /shot|breach/.test(id) ? shapes.breacher : shapes.rifle);
+  return `<svg viewBox="0 0 56 56" class="gun">${shape}</svg>`;
 }
 const gunClsLabel = id => ({ pistol: 'Pistol', smallshotgun: 'Small shotgun', long: 'Long gun' }[gunCls(id)]);
 
@@ -103,7 +105,7 @@ export class UI {
   }
   refreshHint() {
     const L = a => `<kbd>${In.label(a)}</kbd>`;
-    const foot = `${L('interact')} use · ${L('focus')} focus on people · ${L('aim')} aim / draw pistol · ${L('fire')} fire / mine · ${L('pack')} backpack · ${L('holster')} holster · ${L('reload')} reload · ${L('crouch')} crouch · ${L('sprint')} sprint · ${L('view')} view · ${L('use')} eat/drink · ${L('journal')} journal`;
+    const foot = `${L('interact')} use · ${L('focus')} focus on people · ${L('aim')} aim / draw pistol · ${L('fire')} fire / mine · tap ${L('pack')} backpack · hold ${L('pack')} weapon wheel · ${L('holster')} holster · ${L('reload')} reload · ${L('crouch')} crouch · ${L('sprint')} sprint · ${L('view')} view · ${L('use')} eat/drink · ${L('journal')} journal`;
     const sp = `Mouse/stick steer · W/S throttle · ${L('sprint')} boost · ${L('jump')} brake · ${L('fire')} fire · ${L('land')} land · ${L('map')} jump map · ${L('journal')} journal`;
     this.hintFoot = foot; this.hintSpace = sp;
   }

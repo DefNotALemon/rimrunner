@@ -70,7 +70,7 @@ export class Player {
     else if (this.idleT > 12) this.idleCam = damp(this.idleCam, 1, 1.4, dt);
     // ------------- focus & aim state -------------
     const wantFocus = hasInput && In.down.focus; this.focus = damp(this.focus, wantFocus ? 1 : 0, 9, dt);
-    const wantAim = hasInput && In.down.aim && !wantFocus;
+    const wantAim = hasInput && In.down.aim && !wantFocus && !ctx.wheel;   // no aiming while the weapon wheel is up
     if (wantAim && G.held && !G.hand) { const left = addItem(G.held.id, G.held.n || 1); G.held = left ? { ...G.held, n: left } : null; }   // aiming puts what you're holding away
     if (wantAim && !G.hand && !this.reloading) { if (quickPull()) { sfx('zip', 0.6); this.holsterT = 0; } }
     this.aim = damp(this.aim, wantAim && G.hand ? 1 : 0, 12, dt);
@@ -79,8 +79,8 @@ export class Player {
     this.inCombat = !this.dead && (ctx.npcs || []).some(n => !n.dead && !n.crew && !(n.def && n.def.survivor) && (n.hostile || (n.state === 'hunt' && !n.neutral)));
     if (this.inCombat) this.holsterT = 0;
     else if (G.quickDrawn && G.hand && !wantAim && !In.down.fire) { this.holsterT += dt; if (this.holsterT > 3) { stowHand(); sfx('zip', 0.4); } } else if (wantAim) this.holsterT = 0;
-    if (hasInput && In.pressed.holster && G.held) { const left = addItem(G.held.id, G.held.n || 1); G.held = left ? { ...G.held, n: left } : null; sfx('zip', 0.4); }
-    else if (hasInput && In.pressed.holster) { if (G.hand) { stowHand(); sfx('zip', 0.5); } else if (quickPull()) sfx('zip', 0.5); }
+    if (hasInput && !ctx.wheel && In.pressed.holster && G.held) { const left = addItem(G.held.id, G.held.n || 1); G.held = left ? { ...G.held, n: left } : null; sfx('zip', 0.4); }
+    else if (hasInput && !ctx.wheel && In.pressed.holster) { if (G.hand) { stowHand(); sfx('zip', 0.5); } else if (quickPull()) sfx('zip', 0.5); }
     if (hasInput && In.pressed.view) this.thirdPerson = !this.thirdPerson;
     // ------------- look -------------
     const sens = 0.0022 * (1 - this.aim * 0.4) * (1 - this.focus * 0.45);
@@ -227,13 +227,13 @@ export class Player {
     this.beam.visible = false; this.mark.visible = false;
     if (g) {
       const spec = GUN[ITEMS[g.id].gun]; if (g.mag === undefined) g.mag = spec.mag;
-      if (hasInput && In.pressed.reload && g.mag < spec.mag && !this.reloading && count('ammo') > 0) { removeItem('ammo', 1); this.reloading = true; this.reloadT = 1.0; sfx('zip', 0.5); }
+      if (hasInput && !ctx.wheel && In.pressed.reload && g.mag < spec.mag && !this.reloading && count('ammo') > 0) { removeItem('ammo', 1); this.reloading = true; this.reloadT = 1.0; sfx('zip', 0.5); }
       const auto = spec.rate < 0.2;
-      if (hasInput && this.focus < 0.3 && !this.reloading && this.fireCd <= 0 && (auto ? In.down.fire : In.pressed.fire || (In.down.fire && spec.rate < 0.5))) {
+      if (hasInput && !ctx.wheel && this.focus < 0.3 && !this.reloading && this.fireCd <= 0 && (auto ? In.down.fire : In.pressed.fire || (In.down.fire && spec.rate < 0.5))) {
         if (g.mag > 0) this.shoot(g, spec, ctx);
         else if (In.pressed.fire) { toast(count('ammo') ? 'Empty — press ' + In.label('reload') + ' to reload.' : 'Out of ammo.', 'warn'); this.fireCd = 0.3; }
       }
-    } else if (hasInput && In.down.fire && this.focus < 0.3) this.mine(dt, ctx);
+    } else if (hasInput && !ctx.wheel && In.down.fire && this.focus < 0.3) this.mine(dt, ctx);
     else { this.mineT = 0; }
     if (!(hasInput && In.down.fire)) this.mineT = Math.max(0, this.mineT - dt * 2);
   }
