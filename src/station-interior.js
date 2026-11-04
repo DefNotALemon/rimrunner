@@ -13,7 +13,7 @@ import { G } from './state.js';
 import { FIRST, LAST } from './data.js';
 import { systemAt } from './gen.js';
 import { stationContract } from './stations.js';
-import { sLoc, peopleAt, itemsAt } from './missions.js';
+import { sLoc, peopleAt, itemsAt, offersAt } from './missions.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const MAT = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.35, roughness: 0.55, ...o });
@@ -124,6 +124,10 @@ export class StationInterior extends ExtractShip {
       const pref = p.role === 'Bartender' && this.bar ? [this.bar] : this.bar ? [this.bar] : [];
       if (p.role === 'Bartender') { const bt = this.crew.find(c => c.role === 'Bartender'); if (bt) { bt.name = p.who; bt.it.label = `Talk to ${p.who}`; bt.mission = p.m; continue; } }
       const s = this.anySpot(pref); if (!s) continue; this.addPerson({ name: p.who, role: p.role, seed: p.seed, m: p.m, giver: p.giver }, s.s.x, s.s.z, Math.random() * 6.28);
+    }
+    if (this.civil) for (const m of offersAt(this.st).slice(0, 2)) {   // people with work stand about and pitch it when you talk to them
+      if (this.crew.some(c => c.name === m.giver)) continue; const s = this.anySpot(this.bar ? [this.bar] : []); if (!s) continue;
+      this.addPerson({ name: m.giver, role: m.giverRole, seed: m.giverSeed, marker: true }, s.s.x, s.s.z, Math.random() * 6.28);
     }
     for (const it of itemsAt(loc)) {
       const room = this.civil ? this.backRoom() : (this.roomsBy(m => m.type === 'control')[0] || this.roomsBy(m => isVault(m.type))[0] || this.ship.rooms[0]);

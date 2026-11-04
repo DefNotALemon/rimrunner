@@ -22,6 +22,7 @@ import { auditScene } from './audit.js';
 import { Stash } from './stash.js';
 import { WeaponWheel, HOLD_S } from './wheel.js';
 import { preloadAssets, ASSET } from './assets.js';
+import { initMissions } from './missions-ui.js';
 preloadAssets();   // CC0 glTF guns/items; procedural stand-ins show until each file arrives
 
 const canvas = document.getElementById('c');
@@ -70,6 +71,7 @@ const atmo = new Atmo(camera, surf, {
   landed: (x, z, yaw, pad) => { surf.parkShip(x, z, yaw, !!pad); mode = 'foot'; player.place(surf.scene, surf); const c = Math.cos(yaw), s = Math.sin(yaw); player.teleport(x + 14 * c + 4 * s, z - 14 * s + 4 * c, -Math.PI / 2); ui.setHint('foot'); player.view.visible = true; save(); },
 });
 R.atmo = atmo;
+const MW = initMissions({ ui, camera, fadeTo, lock, get mode() { return mode; }, setMode: m => { mode = m; started = true; }, get space() { return space; }, get surf() { return surf; }, get player() { return player; }, jump: i => doJump(i), enterSurface: (p, s) => enterSurface(p, s) });   // missions + orbital stations (missions-ui.js)
 // audit hooks (read-only): __rr.audit() reports glitch classes for the scene currently shown; __rr.go('space'|'atmo'|'foot'|'jail') jumps modes for testing
 R.curScene = () => mode === 'space' ? space.scene : mode === 'atmo' || mode === 'foot' ? surf.scene : mode === 'jail' ? jail.scene : mode === 'extract' ? xs.scene : titleSpace ? titleSpace.scene : null;
 R.assets = ASSET;
@@ -212,7 +214,7 @@ function wallBetween(S, ax, az, bx, bz) {
   return false;
 }
 function nearestInteract() {
-  const S = mode === 'jail' ? jail : mode === 'extract' ? xs : surf; const eye = new THREE.Vector3(player.pos.x, player.pos.y + 1.6, player.pos.z); const f = player.camForward(); let best = null, bs = 1e9;
+  const S = mode === 'jail' ? jail : mode === 'extract' ? xs : mode === 'station' ? MW.stn : surf; const eye = new THREE.Vector3(player.pos.x, player.pos.y + 1.6, player.pos.z); const f = player.camForward(); let best = null, bs = 1e9;
   for (const it of S.interactables) {
     const dx = it.pos.x - player.pos.x, dz = it.pos.z - player.pos.z, d = Math.hypot(dx, dz); if (d > it.r + 0.3 || Math.abs(it.pos.y - player.pos.y) > 3.5) continue;
     const to = new THREE.Vector3(dx, 0, dz).normalize(); const facing = d < 1.6 ? 1 : f.clone().setY(0).normalize().dot(to);
@@ -246,6 +248,8 @@ function doInteract(t) {
   if (t.strip) { stripNPC(t.strip); return; }
   if (t.npc) { if (t.npc.guard) { ui.bubble(t.npc, '"Back to your cell."'); return; } startTalk(t.npc, t.npc.approach && t.npc.pendingQuest ? 'quest' : undefined); return; }
   const it = t.it;
+  if (it.act.startsWith('st:')) { MW.interact(it); return; }
+  if (mode === 'station' && it.act.startsWith('x')) { MW.xinteract(it, X); return; }
   if (it.act.startsWith('x')) { X.interact(it); return; }
   switch (it.act) {
     case 'board': if (G.hp > 0) { stowForFlight(); takeOff(); } break;
@@ -281,7 +285,7 @@ function frame(now) {
     if (P.back && stash.active) stash.close();
     if (P.back) { if (ui.modal && ui.modal !== 'closing') ui.closeAll(); else if (pack.blocking) pack.requestClose(); }
     if (!ui.hail_ && mode !== 'title') {
-      if (P.journal) { if (ui.modal === 'journal') ui.closeAll(); else if (!ui.modal) ui.openJournal(); }
+      if (P.journal) { if (ui.modal === 'journal' || ui.modal === 'missions') ui.closeAll(); else if (!ui.modal) MW.openScreen(); }
       if (P.map && mode === 'space') { if (ui.modal === 'map') ui.closeAll(); else if (!ui.modal) ui.openMap(space, !space.inLane); }
     }
     ui.navigate(); ui.updateLock(dt);
@@ -325,10 +329,11 @@ function frame(now) {
         ui.update(dt, { mode: 'space', player, space: atmo, surf, prompt: atmo.hud.extra || '', camera });
         camera.updateMatrixWorld(true); Look.render(surf.scene, camera, dt);
       }
-    } else if (mode === 'foot' || mode === 'jail' || mode === 'extract') {
-      const S = mode === 'jail' ? jail : mode === 'extract' ? xs : surf; const xm = mode === 'extract';
+    } else if (mode === 'foot' || mode === 'jail' || mode === 'extract' || mode === 'station') {
+      const S = mode === 'jail' ? jail : mode === 'extract' ? xs : mode === 'station' ? MW.stn : surf; const xm = mode === 'extract';
       const act2 = active && !(xm && xs.stunT > 0);
       const ctx = { wheel: wheel.open, active: act2, npcs: xm ? xs.enemies : S.npcs, surf: S, hitNPC: (n, d, h) => xm ? xs.hitEnemy(n, d, h) : social.hit(n, d, h, player, S, ui), onMined: () => {} };
+      if (mode === 'station') { ctx.npcs = S.enemies; ctx.hitNPC = (n, d, h) => S.hitEnemy(n, d, h); }
       stash.attach(S.scene); stash.update(dt, player, ctx);
       player.update(dt, ctx);
       if (pack.scene !== S.scene) { if (pack.scene) [pack.group, pack.ring, pack.label].forEach(o => pack.scene.remove(o)); pack.attach(S.scene); }
@@ -349,11 +354,12 @@ function frame(now) {
       }
       let prompt = pack.isOpen ? (pack.hover ? '' : '') + `<small><kbd>${In.label('interact')}</kbd> take / place · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('interact')}</kbd> whole stack · <kbd>${In.label('reload')}</kbd> drop · <kbd>${In.label('holster')}</kbd> stow · <kbd>${In.label('pack')}</kbd> close</small>` : ''; if (stash.active && stash.prompt) prompt = stash.prompt; if (t && !ui.focusNpc && !(stash.active && stash.hoverItem)) prompt = t.choke ? `<kbd>${In.label('interact')}</kbd> Choke out (they can't see you)` : t.strip ? `<kbd>${In.label('interact')}</kbd> Take their clothes (${esc(t.strip.prof.outfit.name)})` : t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
       if (mode === 'jail') prompt = prompt || `<small>Sentence: ${Math.ceil(jail.timeLeft)}s</small>`; if (mode === 'jail' && jail.maxAlert > 0.05) prompt += ` <span class="alert">GUARD SUSPICIOUS ${(jail.maxAlert * 100) | 0}%</span>`;
-      ui.update(dt, { mode: mode === 'jail' || xm ? 'foot' : mode, player, space, surf: xm ? xs : mode === 'jail' ? { ...jail, planet: { ...jail.planet, name: 'Rimway Holding', kind: 'facility' }, air: 1 } : surf, prompt, camera });
+      ui.update(dt, { mode: mode === 'jail' || xm || mode === 'station' ? 'foot' : mode, player, space, surf: xm || mode === 'station' ? S : mode === 'jail' ? { ...jail, planet: { ...jail.planet, name: 'Rimway Holding', kind: 'facility' }, air: 1 } : surf, prompt, camera });
       if (xm) X.updateHud(player);
       Look.render(S.scene, camera, dt);
     }
   } else { renderTitle(dt); if (mode === 'hub') X.hubNav(); }
+  if (started && mode !== 'hub' && mode !== 'title') MW.update(dt, mode);
   In.consume();
   requestAnimationFrame(frame);
 }
