@@ -426,7 +426,7 @@ export class Player {
     const fx = b.userData.fx; if (fx) { this.pack3.rotation.x = fx.pack; this.pack3.position.y += fx.bounce; }
     if (this.beam.visible && !gun) { J.armR.rotation.x = 1.3; J.elbowR.rotation.x = 0.3; }
     b.rotation.z = 0; b.rotation.x = 0;
-    if (this.lean > 0.01) { const L = this.lean; if (this.leanKind === 'right') b.rotation.z = -0.16 * L; else if (this.leanKind === 'left') b.rotation.z = 0.16 * L; else if (this.leanKind === 'back') { J.spine.rotation.x += 0.1 * L; J.legR.rotation.x -= 0.5 * L; J.kneeR.rotation.x -= 0.6 * L; } else J.spine.rotation.x -= 0.2 * L; J.legR.rotation.z -= 0.08 * L; }
+    if (this.lean > 0.01) { const L = this.lean; if (this.leanKind === 'right') b.rotation.z = -0.16 * L; else if (this.leanKind === 'left') b.rotation.z = 0.16 * L; else if (this.leanKind === 'back') J.spine.rotation.x += 0.1 * L; else J.spine.rotation.x -= 0.2 * L; J.legR.rotation.z -= 0.08 * L; J.footR.rotation.z += 0.08 * L; }   // both feet stay planted (the old back-lean kicked the right heel 20 cm into the air, the wall was never within reach)
     if (gun && (this.bodyGunId !== gun.id || this.bodyGunVer !== ASSET.version)) { this.bodyGunVer = ASSET.version; if (this.bodyGunMesh) this.bodyGunMesh.parent && this.bodyGunMesh.parent.remove(this.bodyGunMesh); this.bodyGunMesh = GUN_ATTACH(gunMesh(gun.id)); J.handR.add(this.bodyGunMesh); this.bodyGunId = gun.id; }
     else if (!gun && this.bodyGunMesh) { this.bodyGunMesh.parent && this.bodyGunMesh.parent.remove(this.bodyGunMesh); this.bodyGunMesh = null; this.bodyGunId = null; }
     // the backpack: on the shoulder, or lowered to the floor in front of you
