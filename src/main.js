@@ -19,6 +19,7 @@ import { pickContract } from './ships.js';
 import { ITEMS } from './data.js';
 import { fmt, clamp } from './util.js';
 import { auditScene } from './audit.js';
+import { Stash } from './stash.js';
 import { preloadAssets, ASSET } from './assets.js';
 preloadAssets();   // CC0 glTF guns/items; procedural stand-ins show until each file arrives
 
@@ -50,10 +51,11 @@ const hooks = {
 };
 const ui = new UI(hooks);
 const pack = new PackWorld(camera, { dropItem: (h, pos) => surf.dropItem(h, pos) });
+const stash = new Stash(camera);
 G.dropped = g => { surf.dropGun(g, { x: player.pos.x + Math.sin(player.yaw) * -1.2, z: player.pos.z + Math.cos(player.yaw) * -1.2 }); };
 
 const X = new Extraction({
-  S: xs, get player() { return player; }, ui, pack, fadeTo, lock, openLoot: ctx => pack.openLoot(ctx, player),
+  S: xs, get player() { return player; }, ui, pack, stash, fadeTo, lock, openLoot: ctx => pack.openLoot(ctx, player),
   setMode: m => { mode = m; started = true; },
   resetPack: () => { player.packOpen = false; if (pack.blocking) pack.requestClose(); if (G.held) G.held = null; },
   toTitle: () => { mode = 'title'; started = false; document.getElementById('title').style.display = ''; },
@@ -272,6 +274,8 @@ function frame(now) {
   const P = In.pressed;
   const locked = In.locked || In.scheme !== 'kb' || R.forceActive;
   if (started && mode !== 'hub') {
+    if (P.back && stash.active) stash.close();
+    if (P.pack && stash.active) stash.close();
     if (P.back) { if (ui.modal && ui.modal !== 'closing') ui.closeAll(); else if (pack.blocking) pack.requestClose(); }
     if (!ui.hail_ && mode !== 'title') {
       if (P.pack && (mode === 'foot' || mode === 'jail')) { if (pack.isOpen || pack.phase === 'opening' || pack.phase === 'lowering') pack.requestClose(); else if (pack.phase === 'idle' && !ui.modal) pack.begin(player); }
@@ -301,6 +305,7 @@ function frame(now) {
       const S = mode === 'jail' ? jail : mode === 'extract' ? xs : surf; const xm = mode === 'extract';
       const act2 = active && !(xm && xs.stunT > 0);
       const ctx = { active: act2, npcs: xm ? xs.enemies : S.npcs, surf: S, hitNPC: (n, d, h) => xm ? xs.hitEnemy(n, d, h) : social.hit(n, d, h, player, S, ui), onMined: () => {} };
+      stash.attach(S.scene); stash.update(dt, player, ctx);
       player.update(dt, ctx);
       if (pack.scene !== S.scene) { if (pack.scene) [pack.group, pack.ring, pack.label].forEach(o => pack.scene.remove(o)); pack.attach(S.scene); }
       camera.updateMatrixWorld(true); pack.update(dt, player, ctx);
@@ -318,7 +323,7 @@ function frame(now) {
         const nx = nearestInteract; void nx;
         // after stepping near the ship with E: board
       }
-      let prompt = pack.isOpen ? (pack.hover ? '' : '') + `<small><kbd>${In.label('interact')}</kbd> take / place · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('interact')}</kbd> whole stack · <kbd>${In.label('reload')}</kbd> drop · <kbd>${In.label('holster')}</kbd> stow · <kbd>${In.label('pack')}</kbd> close</small>` : ''; if (t && !ui.focusNpc) prompt = t.choke ? `<kbd>${In.label('interact')}</kbd> Choke out (they can't see you)` : t.strip ? `<kbd>${In.label('interact')}</kbd> Take their clothes (${esc(t.strip.prof.outfit.name)})` : t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
+      let prompt = pack.isOpen ? (pack.hover ? '' : '') + `<small><kbd>${In.label('interact')}</kbd> take / place · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('interact')}</kbd> whole stack · <kbd>${In.label('reload')}</kbd> drop · <kbd>${In.label('holster')}</kbd> stow · <kbd>${In.label('pack')}</kbd> close</small>` : ''; if (stash.active && stash.prompt) prompt = stash.prompt; if (t && !ui.focusNpc && !(stash.active && stash.hoverItem)) prompt = t.choke ? `<kbd>${In.label('interact')}</kbd> Choke out (they can't see you)` : t.strip ? `<kbd>${In.label('interact')}</kbd> Take their clothes (${esc(t.strip.prof.outfit.name)})` : t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
       if (mode === 'jail') prompt = prompt || `<small>Sentence: ${Math.ceil(jail.timeLeft)}s</small>`; if (mode === 'jail' && jail.maxAlert > 0.05) prompt += ` <span class="alert">GUARD SUSPICIOUS ${(jail.maxAlert * 100) | 0}%</span>`;
       ui.update(dt, { mode: mode === 'jail' || xm ? 'foot' : mode, player, space, surf: xm ? xs : mode === 'jail' ? { ...jail, planet: { ...jail.planet, name: 'Rimway Holding', kind: 'facility' }, air: 1 } : surf, prompt, camera });
       if (xm) X.updateHud(player);

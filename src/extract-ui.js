@@ -114,10 +114,11 @@ export class Extraction {
   // searching pulls your bag out in front of you with the contents laid beside it
   openTray(title, entries, onClose) { this.app.openLoot({ title, items: entries, onClose }); }
   loot(c, it) {
-    if (c.opened) return; const { S, app } = this;
+    if (c.opened) return; const { S, app } = this; const st = app.stash;
+    if (st.cur === c) { st.close(); return; }
     const open = () => {
       if (!c.entries) c.entries = this.entriesOf(c.items);
-      this.openTray(it.label, c.entries, rest => { c.entries = rest; if (!rest.length) { c.opened = true; c.led.material.color.setHex(0x333840); S.interactables = S.interactables.filter(x => x !== it); S.opened++; } });
+      st.open(c, () => { c.opened = true; c.led.material.color.setHex(0x333840); S.interactables = S.interactables.filter(x => x !== it); S.opened++; });
     };
     if (c.locked) { app.ui.lockpick(lvl('lockpick'), ok => { if (ok) { c.locked = false; c.led.material.color.setHex(0x55ff88); open(); } else { toast('The pick snapped.', 'warn'); S.alertAround(c.x, c.z, 10); } }); } else open();
   }

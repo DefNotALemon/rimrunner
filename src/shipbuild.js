@@ -3,6 +3,7 @@ import * as THREE from '../vendor/three.module.js';
 import { Batch, signTex } from './interior-kit.js';
 import { rng } from './util.js';
 import { rollLoot, ROOM_LABEL, isVault } from './ships.js';
+import { WallKit, STYLE_OF_ROOM } from './wallkit.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const UB = new THREE.BoxGeometry(1, 1, 1).toNonIndexed(), UC = new THREE.CylinderGeometry(1, 1, 1, 14).toNonIndexed();
@@ -51,7 +52,7 @@ const RS = {
 };
 export function buildShip(ship, S) {
   const r = rng(ship.seed ^ 0x77aa), corp = ship.corp, H = ship.H, W = ship.W;
-  const bt = new Batch(); S.lamps = []; S.containers = []; S.doors = []; S.portDoors = [];
+  const bt = new Batch(); const kit = new WallKit(bt, rng(ship.seed ^ 0x3c3c)); S.wallStats = kit.stats; S.lamps = []; S.containers = []; S.doors = []; S.portDoors = [];
   const jit = (col, a = 0.06) => { _c.set(col); const k = 1 + (r() - 0.5) * a * 2; return _c.setRGB(Math.min(1, _c.r * k), Math.min(1, _c.g * k), Math.min(1, _c.b * k)).getHex(); };
   const box = (kind, col, x0, x1, y0, y1, z0, z1) => { _m.compose(_p.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), _q.identity(), _s.set(Math.max(1e-3, x1 - x0), Math.max(1e-3, y1 - y0), Math.max(1e-3, z1 - z0))); bt.put(kind, UB, _m, col); };
   const cyl = (kind, col, cx, cz, rad, y0, y1) => { _m.compose(_p.set(cx, (y0 + y1) / 2, cz), _q.identity(), _s.set(rad, y1 - y0, rad)); bt.put(kind, UC, _m, col); };
@@ -86,12 +87,31 @@ export function buildShip(ship, S) {
     gaps.sort((p, q) => p[0] - q[0]);
     const bx = (kind, c, s0, s1, y0, y1, off0, off1) => axis === 'x' ? box(kind, c, s0, s1, y0, y1, at + off0, at + off1) : box(kind, c, at + off0, at + off1, y0, y1, s0, s1);
     const cl = (s0, s1) => axis === 'x' ? col(s0, s1, at - t / 2, at + t / 2, hh) : col(at - t / 2, at + t / 2, s0, s1, hh);
+    // viewports of hull walls are placed first so the wall kit leaves their frames clear
+    const vps = [];
+    if (hull && b - a >= 4) {
+      const inner = o1 === -2 ? o2 : o1, m = roomOf(inner), k = inner >= 0 ? owners[inner].kind : '', sgn = o1 === -2 ? 1 : -1;
+      const ok = k === 'plaza' || k === 'cor' ? true : m && ['crew', 'canteen', 'office', 'control', 'lab', 'medbay', 'barracks', 'cooling', 'guardroom'].includes(m.type);
+      if (ok) { const n = Math.floor((b - a) / (k === 'cor' || k === 'plaza' ? 4.5 : 6)) || 1;
+        for (let q = 0; q < n; q++) { const cc = a + (q + 0.5) * (b - a) / n, w = Math.min(r.range(1.8, 3.4), (b - a) / n - 1.4); if (w < 1.2 || r() < (k === 'cor' || k === 'plaza' ? 0.08 : 0.25)) continue; if (gaps.some(g => Math.abs(g[0] - cc) < g[1] / 2 + w / 2 + 0.6)) continue; vps.push({ cc, w, sgn }); } }
+    }
+    // wall-kit faces: every non-hull side of this run gets a style (room type -> look, corridors by corp, damaged stretches deeper in)
+    const dep = ship.contract.depth || 1, dmgBase = Math.min(0.2, 0.02 + 0.03 * dep), dsides = [];
+    for (const [o, sgn] of [[o1, -1], [o2, 1]]) { if (o < 0) continue; const m = roomOf(o), kd = owners[o].kind;
+      let style = m ? (STYLE_OF_ROOM[m.type] || 'corp') : kd === 'duct' ? 'duct' : (corp.short.charCodeAt(0) & 1) ? 'industrial' : 'corp';
+      if (!m && kd !== 'duct' && r() < 0.08 + 0.04 * dep) style = 'derelict'; else if (m && r() < 0.04 * dep) style = 'derelict';
+      const off = m ? t / 2 + 0.03 : t / 2 + 0.02, th = m ? m.theme : { wall: corp.wall, dado: corp.dado, acc: corp.accent };
+      const fc = axis === 'x' ? kit.face(0, at + sgn * off, 0, sgn, 1, 0) : kit.face(at + sgn * off, 0, sgn, 0, 0, 1);
+      dsides.push({ f: fc, style, top: m ? Math.min(m.H, hh) : Math.min(owners[o].H, hh), th, dmg: style === 'derelict' ? 0.22 : dmgBase, dens: style === 'server' ? 1 : style === 'derelict' ? 0.75 : 0.62 }); }
+    const dressSeg = (s0, s1) => { for (const d of dsides) { let rs = [[s0, s1]]; if (hull) for (const v of vps) { const lo = v.cc - v.w / 2 - 0.3, hi = v.cc + v.w / 2 + 0.3; rs = rs.flatMap(([x0, x1]) => x1 <= lo || x0 >= hi ? [[x0, x1]] : [[x0, Math.min(x1, lo)], [Math.max(x0, hi), x1]]); }
+      for (const [x0, x1] of rs) if (x1 - x0 > 0.6) kit.dress(d.f, x0, x1, { style: d.style, top: d.top, wall: d.th.wall, dado: d.th.dado, acc: d.th.acc, dmg: d.dmg, dens: d.dens }); } };
     const sides = [];   // painted faces: room interiors get their own dado / wall / accent
     for (const [o, sgn] of [[o1, -1], [o2, 1]]) { const m = roomOf(o); if (m) sides.push({ m, sgn, off0: sgn < 0 ? -t / 2 - 0.03 : t / 2, off1: sgn < 0 ? -t / 2 : t / 2 + 0.03 }); }
     // wall extent along the run, interrupted by gaps
     const seg = (s0, s1) => {
       if (s1 - s0 < 0.04) return;
       bx('matte', wc, s0, s1, 1.05, hh, -t / 2, t / 2); bx('matte', dc, s0, s1, 0, 1.05, -t / 2 - 0.02, t / 2 + 0.02); if (!hull) bx('matte', corp.trim, s0, s1, 1.05, 1.11, -t / 2 - 0.045, t / 2 + 0.045); cl(s0, s1);
+      dressSeg(s0, s1);
       for (const sd of sides) { const th = sd.m.theme, ac = new THREE.Color(th.acc).multiplyScalar(0.6).getHex(), top = Math.min(sd.m.H, hh);
         bx('matte', th.dado, s0, s1, 0, 1.05, sd.off0, sd.off1); bx('matte', th.wall, s0, s1, 1.05, top, sd.off0, sd.off1); bx('matte', ac, s0, s1, 1.05, 1.1, sd.off0 - 0.005 * sd.sgn, sd.off1 - 0.005 * sd.sgn); if (top > 2.8) bx('matte', ac, s0, s1, 2.7, 2.76, sd.off0 - 0.005 * sd.sgn, sd.off1 - 0.005 * sd.sgn); }
     };
@@ -111,14 +131,10 @@ export function buildShip(ship, S) {
     seg(cur, b);
     vert(axis, at, a, t, hh); vert(axis, at, b, t, hh);
     // viewports: hull walls of spaces with a view show the stars
-    if (hull && b - a >= 4) {
-      const inner = o1 === -2 ? o2 : o1, m = roomOf(inner), k = inner >= 0 ? owners[inner].kind : '', sgn = o1 === -2 ? 1 : -1;
-      const ok = k === 'plaza' || k === 'cor' ? true : m && ['crew', 'canteen', 'office', 'control', 'lab', 'medbay', 'barracks', 'cooling', 'guardroom'].includes(m.type);
-      if (ok) { const n = Math.floor((b - a) / (k === 'cor' || k === 'plaza' ? 4.5 : 6)) || 1;
-        for (let q = 0; q < n; q++) { const cc = a + (q + 0.5) * (b - a) / n, w = Math.min(r.range(1.8, 3.4), (b - a) / n - 1.4); if (w < 1.2 || r() < (k === 'cor' || k === 'plaza' ? 0.08 : 0.25)) continue; if (gaps.some(g => Math.abs(g[0] - cc) < g[1] / 2 + w / 2 + 0.6)) continue;
-          const f0 = sgn < 0 ? -t / 2 - 0.06 : t / 2, f1 = sgn < 0 ? -t / 2 : t / 2 + 0.06, g0 = sgn < 0 ? -t / 2 - 0.04 : t / 2 + 0.01, g1 = sgn < 0 ? -t / 2 - 0.01 : t / 2 + 0.04;
-          bx('matte', corp.trim, cc - w / 2 - 0.1, cc + w / 2 + 0.1, 1.2, 2.5, f0, f1); bx('emis', 0x01030a, cc - w / 2, cc + w / 2, 1.3, 2.4, g0, g1);
-          for (let s = 0; s < 7; s++) { const sx = cc + r.range(-w / 2 + 0.1, w / 2 - 0.1), sy = r.range(1.4, 2.3); bx('emis', r() < 0.2 ? 0xffd9a0 : 0xcfe0ff, sx, sx + 0.05, sy, sy + 0.05, sgn < 0 ? g0 - 0.01 : g1, sgn < 0 ? g0 : g1 + 0.01); } } }
+    for (const { cc, w, sgn } of vps) {
+      const f0 = sgn < 0 ? -t / 2 - 0.06 : t / 2, f1 = sgn < 0 ? -t / 2 : t / 2 + 0.06, g0 = sgn < 0 ? -t / 2 - 0.04 : t / 2 + 0.01, g1 = sgn < 0 ? -t / 2 - 0.01 : t / 2 + 0.04;
+      bx('matte', corp.trim, cc - w / 2 - 0.1, cc + w / 2 + 0.1, 1.2, 2.5, f0, f1); bx('emis', 0x01030a, cc - w / 2, cc + w / 2, 1.3, 2.4, g0, g1);
+      for (let s = 0; s < 7; s++) { const sx = cc + r.range(-w / 2 + 0.1, w / 2 - 0.1), sy = r.range(1.4, 2.3); bx('emis', r() < 0.2 ? 0xffd9a0 : 0xcfe0ff, sx, sx + 0.05, sy, sy + 0.05, sgn < 0 ? g0 - 0.01 : g1, sgn < 0 ? g0 : g1 + 0.01); }
     }
   }
   for (const run of ship.runs) wallRun(run);
@@ -330,19 +346,54 @@ export function buildShip(ship, S) {
     const c = makeContainer(S, { x: st.x, z: st.z, rot: st.rot, k, kindName: kn }, corp, items, null); S.containers.push(c);
   }
   bt.flush(S.root);
+  kit.flush(S.root);
 }
 
 const _mats = {};
 const cm = (k, f) => _mats[k] || (_mats[k] = f());
 export function makeContainer(S, spot, corp, items, room) {
   const { x, z, rot, k, kindName } = spot; const g = new THREE.Group();
-  const body = cm('b' + kindName + corp.short, () => new THREE.MeshStandardMaterial({ color: kindName === 'safe' ? 0x31353c : kindName === 'crate' ? 0x6b5a3c : new THREE.Color(corp.trim).multiplyScalar(0.55).getHex(), metalness: kindName === 'crate' ? 0.1 : 0.6, roughness: 0.5 }));
-  const main = new THREE.Mesh(new THREE.BoxGeometry(k.w, k.h, k.d), body); main.position.y = k.h / 2; g.add(main);
-  const led = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.02), new THREE.MeshBasicMaterial({ color: k.locked ? 0xff3030 : 0x55ff88 })); led.position.set(0, k.h - 0.12, k.d / 2 + 0.011); g.add(led);
-  if (kindName === 'rack') { const gm = new THREE.MeshStandardMaterial({ color: 0x1c1e22, metalness: 0.7, roughness: 0.4 }); for (let i = 0; i < 3; i++) { const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.8), gm); gun.rotation.y = Math.PI / 2; gun.position.set(0, 0.4 + i * 0.28, k.d / 2 + 0.06); g.add(gun); } }
-  if (kindName === 'safe') { const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.04, 12), new THREE.MeshStandardMaterial({ color: 0xb0b6be, metalness: 0.9 })); dial.rotation.x = Math.PI / 2; dial.position.set(0, k.h * 0.6, k.d / 2 + 0.02); g.add(dial); }
+  const bodyCol = kindName === 'safe' ? 0x31353c : kindName === 'crate' ? 0x6b5a3c : new THREE.Color(corp.trim).multiplyScalar(0.55).getHex();
+  const body = cm('b' + kindName + corp.short, () => new THREE.MeshStandardMaterial({ color: bodyCol, metalness: kindName === 'crate' ? 0.1 : 0.6, roughness: 0.5 }));
+  const inner = cm('in' + kindName, () => new THREE.MeshStandardMaterial({ color: new THREE.Color(bodyCol).multiplyScalar(0.55).getHex(), metalness: 0.2, roughness: 0.8 }));
+  const glow = cm('glow', () => new THREE.MeshBasicMaterial({ color: 0xfff0c8 }));
+  const box = (w, h, d, px, py, pz, m = body, parent = g) => { const me = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); me.position.set(px, py, pz); me.castShadow = true; me.receiveShadow = true; parent.add(me); return me; };
+  const led = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.05, 0.02), new THREE.MeshBasicMaterial({ color: k.locked ? 0xff3030 : 0x55ff88 }));
+  const T = 0.04, rig = { t: 0, want: 0, k, tray: new THREE.Group(), apply() {} };
+  const door = kindName === 'locker' || kindName === 'safe' || kindName === 'rack', drawer = kindName === 'drawer';
+  if (door) {
+    // hollow cabinet: back, sides, top, bottom, a shelf; the door hangs on its left edge and swings out
+    box(k.w, k.h, T, 0, k.h / 2, -k.d / 2 + T / 2, inner); box(T, k.h, k.d, -k.w / 2 + T / 2, k.h / 2, 0); box(T, k.h, k.d, k.w / 2 - T / 2, k.h / 2, 0);
+    box(k.w, T, k.d, 0, k.h - T / 2, 0); box(k.w, T, k.d, 0, T / 2, 0, inner);
+    if (kindName !== 'rack') box(k.w - 2 * T, 0.03, k.d - T, 0, kindName === 'safe' ? 0.5 : 0.9, T / 2, inner);
+    box(k.w - 0.12, 0.012, 0.05, 0, k.h - T - 0.01, k.d / 2 - 0.12, glow);
+    const th = kindName === 'safe' ? 0.12 : 0.04; const hinge = new THREE.Group(); hinge.position.set(-k.w / 2, 0, k.d / 2); g.add(hinge);
+    box(k.w, k.h, th, k.w / 2, k.h / 2, -th / 2, body, hinge);
+    led.position.set(k.w / 2, k.h - 0.12, 0.011); hinge.add(led);
+    if (kindName === 'locker') box(0.03, 0.14, 0.03, k.w - 0.1, 0.95, 0.02, cm('handle', () => new THREE.MeshStandardMaterial({ color: 0xd8dce0, metalness: 0.8, roughness: 0.3 })), hinge);
+    if (kindName === 'safe') { const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.04, 12), new THREE.MeshStandardMaterial({ color: 0xb0b6be, metalness: 0.9 })); dial.rotation.x = Math.PI / 2; dial.position.set(k.w / 2, k.h * 0.6, 0.02); hinge.add(dial); }
+    if (kindName === 'rack') { const gm = new THREE.MeshStandardMaterial({ color: 0x1c1e22, metalness: 0.7, roughness: 0.4 }); for (let i = 0; i < 3; i++) { const gun = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.07, 0.8), gm); gun.rotation.y = Math.PI / 2; gun.position.set(k.w / 2, 0.3 + i * 0.28, 0.06); hinge.add(gun); } }
+    rig.apply = e => { hinge.rotation.y = -1.95 * e; };
+  } else if (drawer) {
+    box(k.w, k.h, k.d, 0, k.h / 2, 0);                                  // the cabinet; the drawer runs out of its front
+    const slot = box(k.w - 0.1, 0.16, 0.012, 0, 0.8, k.d / 2 + 0.002, inner);
+    void slot; rig.tray.position.set(0, 0.76, 0);
+    const dw = k.w - 0.14, dd = k.d - 0.06; box(dw, 0.03, dd, 0, 0, 0, inner, rig.tray); box(dw, 0.12, 0.03, 0, 0.06, dd / 2, body, rig.tray); box(dw, 0.12, 0.03, 0, 0.06, -dd / 2, body, rig.tray); box(0.03, 0.12, dd, -dw / 2, 0.06, 0, body, rig.tray); box(0.03, 0.12, dd, dw / 2, 0.06, 0, body, rig.tray);
+    box(0.2, 0.025, 0.03, 0, 0.07, dd / 2 + 0.03, cm('handle', () => new THREE.MeshStandardMaterial({ color: 0xd8dce0, metalness: 0.8, roughness: 0.3 })), rig.tray);
+    led.position.set(0, k.h - 0.12, k.d / 2 + 0.011); g.add(led);
+    rig.apply = e => { rig.tray.position.z = e * (k.d * 0.85); };
+  } else {
+    // crates and cases: an open tray with a lid hinged along the back edge
+    box(k.w, T, k.d, 0, T / 2, 0, inner); box(k.w, k.h, T, 0, k.h / 2, k.d / 2 - T / 2); box(k.w, k.h, T, 0, k.h / 2, -k.d / 2 + T / 2);
+    box(T, k.h, k.d - 2 * T, -k.w / 2 + T / 2, k.h / 2, 0); box(T, k.h, k.d - 2 * T, k.w / 2 - T / 2, k.h / 2, 0);
+    const lid = new THREE.Group(); lid.position.set(0, k.h, -k.d / 2); g.add(lid); box(k.w, 0.06, k.d, 0, 0.03, k.d / 2, body, lid); box(k.w - 0.14, 0.012, k.d - 0.14, 0, -0.004, k.d / 2, glow, lid);
+    box(0.12, 0.05, 0.04, 0, 0.0, k.d - 0.02, cm('latch', () => new THREE.MeshStandardMaterial({ color: 0xcaa860, metalness: 0.8, roughness: 0.4 })), lid);
+    led.position.set(0, k.h - 0.12, k.d / 2 + 0.011); g.add(led);
+    rig.tray.position.set(0, T, 0); rig.apply = e => { lid.rotation.x = -1.95 * e; };
+  }
+  g.add(rig.tray);
   g.position.set(x, 0, z); g.rotation.y = rot; S.root.add(g);
-  const c = { g, led, x, z, kind: kindName, k, items, opened: false, locked: !!k.locked, room };
+  const c = { g, led, x, z, kind: kindName, k, items, opened: false, locked: !!k.locked, room, rig };
   S.interactables.push({ pos: V(x, 0.9, z), r: Math.max(1.5, k.w + 0.6), label: k.label, act: 'xloot', data: c, container: c });
   return c;
 }
