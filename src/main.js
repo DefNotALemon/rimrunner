@@ -1,7 +1,7 @@
 // Rimrunner — main loop and glue
 import * as THREE from '../vendor/three.module.js';
 import { In, initInput, pollInput } from './input.js';
-import { G, resetGame, save, load, toast, addItem, newPack, addGun, lvl, xp, count, uid, stowHand } from './state.js';
+import { G, resetGame, save, load, toast, addItem, newPack, addGun, lvl, xp, count, uid, stowHand, newLockers } from './state.js';
 import { systemAt } from './gen.js';
 import { Space } from './space.js';
 import { Surface } from './surface.js';
@@ -247,7 +247,7 @@ function doInteract(t) {
   switch (it.act) {
     case 'board': if (G.hp > 0) { stowForFlight(); takeOff(); } break;
     case 'wardrobe': { const w = G.wardrobe || []; if (!w.length) { toast('Your wardrobe is empty. Take clothes off people who won\'t miss them.', ''); break; } const next = w.shift(); w.push(JSON.parse(JSON.stringify(G.outfit))); G.wardrobe = w; player.wear(next); toast(`Changed into: ${next.name}.`, 'good'); break; }
-    case 'lockers': ui.openLockers(); break;
+    case 'lockers': { if (pack.phase !== 'idle') break; if (!G.lockers || !G.lockers.length) G.lockers = newLockers(); const cols = 8; pack.openLoot({ title: 'Ship lockers', cols, items: G.lockers.flat(), onCloseAll: all => { G.lockers = G.lockers.map((_, li) => all.slice(li * cols, li * cols + cols)); } }, player); break; }
     case 'bench': ui.openBench('craft'); break;
     case 'tech': ui.openBench('tech'); break;
     case 'outfitter': ui.openOutfitter(); break;
@@ -275,7 +275,7 @@ function frame(now) {
     if (P.back) { if (ui.modal && ui.modal !== 'closing') ui.closeAll(); else if (pack.blocking) pack.requestClose(); }
     if (!ui.hail_ && mode !== 'title') {
       if (P.pack && (mode === 'foot' || mode === 'jail')) { if (pack.isOpen || pack.phase === 'opening' || pack.phase === 'lowering') pack.requestClose(); else if (pack.phase === 'idle' && !ui.modal) pack.begin(player); }
-      if (P.pack && mode === 'space' && !ui.modal) ui.openLockers(); else if (P.pack && mode === 'space' && ui.modal === 'lockers') ui.closeAll();
+      if (P.pack && mode === 'space') toast('Ship lockers are opened on foot, from beside your ship.', '');
       if (P.journal) { if (ui.modal === 'journal') ui.closeAll(); else if (!ui.modal) ui.openJournal(); }
       if (P.map && mode === 'space') { if (ui.modal === 'map') ui.closeAll(); else if (!ui.modal) ui.openMap(space, !space.inLane); }
     }

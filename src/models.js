@@ -161,11 +161,20 @@ export function buildPerson(look, opts = {}) {
   return g;
 }
 
-export function buildBackpackMesh() {
-  const g = new THREE.Group(); const leather = std(0x6b4a2d, { roughness: 0.9, metalness: 0 });
-  const body = mesh(new THREE.BoxGeometry(0.34, 0.46, 0.18), leather); g.add(body);
-  const flap = mesh(new THREE.BoxGeometry(0.35, 0.18, 0.2), std(0x7b5636, { roughness: 0.9, metalness: 0 })); flap.position.y = 0.2; g.add(flap);
-  const pocket = mesh(new THREE.BoxGeometry(0.26, 0.2, 0.06), std(0x5a3d24, { roughness: 0.9, metalness: 0 })); pocket.position.set(0, -0.08, 0.12); g.add(pocket);
+export function buildBackpackMesh() {   // a plain school backpack: domed top, carry loop, front pouch, bottle pockets, zipper round the seam, two straps
+  const g = new THREE.Group(); const cloth = std(0x6b4a2d, { roughness: 0.9, metalness: 0 }), dark = std(0x2e2012, { roughness: 0.9, metalness: 0 }), pouchM = std(0x7b5636, { roughness: 0.9, metalness: 0 }), brass = std(0xc9a24a, { roughness: 0.3, metalness: 0.85 });
+  const W = 0.34, D = 0.17;
+  const body = mesh(new THREE.BoxGeometry(W, 0.34, D), cloth); body.position.y = -0.05; g.add(body);
+  const dome = mesh(new THREE.CylinderGeometry(W / 2, W / 2, D, 18, 1, false, 0, Math.PI), cloth); dome.rotation.set(Math.PI / 2, 0, 0); dome.rotation.order = 'ZXY'; dome.rotation.z = -Math.PI / 2 + Math.PI; dome.position.y = 0.12; g.add(dome);
+  const zip = (w, h, d, x, y, z, m = dark) => { const b = mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); g.add(b); return b; };
+  zip(W + 0.004, 0.008, 0.008, 0, -0.05 + 0.17 + 0.0, D / 2 + 0.001);                                  // zipper across the shoulder line
+  zip(0.008, 0.34, 0.008, -W / 2 - 0.001, -0.05, D / 2 - 0.002); zip(0.008, 0.34, 0.008, W / 2 + 0.001, -0.05, D / 2 - 0.002);
+  zip(0.03, 0.03, 0.012, 0.1, 0.12, D / 2 + 0.006, brass);                                           // pull
+  const pouch = mesh(new THREE.BoxGeometry(W - 0.08, 0.16, 0.06), pouchM); pouch.position.set(0, -0.12, D / 2 + 0.03); g.add(pouch);   // the small front pocket
+  zip(W - 0.1, 0.008, 0.008, 0, -0.06, D / 2 + 0.062); zip(0.03, 0.02, 0.01, 0.06, -0.06, D / 2 + 0.07, brass);
+  const loop = mesh(new THREE.TorusGeometry(0.035, 0.008, 6, 12, Math.PI), dark); loop.position.set(0, 0.2, 0); g.add(loop);
+  for (const x of [-0.1, 0.1]) { const st = mesh(new THREE.BoxGeometry(0.06, 0.4, 0.016), dark); st.position.set(x, -0.02, -D / 2 - 0.008); g.add(st); }
+  for (const x of [-1, 1]) { const bp = mesh(new THREE.BoxGeometry(0.06, 0.15, D * 0.8), pouchM); bp.position.set(x * (W / 2 + 0.028), -0.15, 0); g.add(bp); }
   g.userData.sides = [new THREE.Group(), new THREE.Group()]; g.userData.sides[0].position.set(-0.22, 0, 0); g.userData.sides[1].position.set(0.22, 0, 0); g.add(...g.userData.sides);
   return g;
 }

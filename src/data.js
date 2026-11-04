@@ -109,7 +109,7 @@ export const RECIPES = [
   { out: 'arc', n: 1, in: { gunpart: 6, alloy: 4, cell: 4, circuit: 4 }, tech: 'plasma', skill: 'gunsmith' },
 ];
 
-export const PACK_SLOTS = [4, 6, 8, 10];
+export const PACK_SLOTS = [4, 6, 8, 9];
 export const PACK_NAMES = ['Scrap Satchel', 'Ranger Pack', 'Haul Pack', 'Expedition Frame'];
 
 export const PLANET_KINDS = {

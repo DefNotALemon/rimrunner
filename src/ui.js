@@ -140,91 +140,14 @@ export class UI {
     document.body.classList.add('modal');
   }
   closeAll() {
-    if (this.modal === 'packwait') { clearTimeout(this.packTimer); this.hooks.packOpen(false); this.modal = null; document.body.classList.remove('modal'); this.hooks.onClose && this.hooks.onClose(); return; }
-    if (!this.modal && this.panel.classList.contains('hidden')) return; this.lp = null; this.lpFail = 0; const wasPack = this.modal === 'pack';
+    if (!this.modal && this.panel.classList.contains('hidden')) return; this.lp = null; this.lpFail = 0;
     const fin = () => { this.modal = null; this.panel.className = 'panel hidden'; this.panel.innerHTML = ''; document.body.classList.remove('modal'); this.hooks.onClose && this.hooks.onClose(); };
-    if (wasPack) { const b = $('.bag', this.panel); b && b.classList.remove('open', 'in'); this.hooks.packOpen(false); this.modal = 'closing'; setTimeout(fin, 380); } else fin();
+    fin();
     this.hooks.talkEnd && this.hooks.talkEnd();
   }
   btn(label, fn, cls = '', key) { const b = el('button', cls, (key ? `<kbd>${key}</kbd> ` : '') + label); if (key) b.dataset.k = key; b.onclick = () => { sfx('ui', 0.5); fn(); }; return b; }
   head(title, sub = '') { return `<div class="ph"><h2>${esc(title)}</h2><small>${sub}</small><button class="x" data-close>✕</button></div>`; }
   wireClose() { this.panel.querySelectorAll('[data-close]').forEach(b => b.onclick = () => this.closeAll()); }
-
-  // ---------- item visuals ----------
-  slotHTML(e, extra = '') {
-    if (!e) return `<div class="slot empty ${extra}"></div>`;
-    const it = ITEMS[e.id];
-    if (e.uid) return `<div class="slot gunslot ${extra}" title="${esc(it.name)}">${gunSVG(e.id)}<span class="nm">${esc(it.name)}</span><span class="q">${((e.q || 1) * 100) | 0}%</span></div>`;
-    return `<div class="slot ${extra}" title="${esc(it.name)}"><div class="sw" style="background:${it.color}"></div><span class="nm">${esc(it.name)}</span><span class="n">${e.n}</span></div>`;
-  }
-
-  // ---------- backpack ----------
-  openPack() {
-    // the pack comes off your shoulder and is set on the floor in front of you; the UI opens once it's down
-    this.hooks.packOpen(true); this.packFace = 'front'; this.sel = null; this.modal = 'packwait'; document.exitPointerLock?.(); document.body.classList.add('modal'); sfx('zip', 0.7);
-    this.packTimer = setTimeout(() => {
-      if (this.modal !== 'packwait') return; this.open('pack', '', 'packwrap'); this.panel.style.setProperty('--bs', clamp((innerHeight - 250) / 600, 0.42, 1)); this.renderPack(true);
-      requestAnimationFrame(() => { const b = $('.bag', this.panel); if (!b) return; b.classList.add('in'); setTimeout(() => b.classList.add('open'), 380); });
-    }, 950);
-  }
-  renderPack(first) {
-    const P = G.pack; const n = PACK_SLOTS[P.tier];
-    const prevState = this.panel.querySelector('.bag'); const was = prevState ? prevState.className : 'bag';
-    const flapSlots = (face, from, to) => `<div class="slots n${n}">${P[face].slice(from, to).map((e, k) => { const i = from + k; return `<div data-face="${face}" data-i="${i}" class="nav">${this.slotHTML(e, this.sel && this.sel.t === 'slot' && this.sel.face === face && this.sel.i === i ? 'sel' : '')}</div>`; }).join('')}</div>`;
-    const pocket = Object.entries(P.pocket).filter(([, c]) => c > 0);
-    const sideHTML = i => `<div class="side s${i} nav" data-side="${i}">${P.sides[i] ? `<div class="slot gunslot ${this.sel && this.sel.t === 'side' && this.sel.i === i ? 'sel' : ''}">${gunSVG(P.sides[i].id)}<span class="nm">${esc(ITEMS[P.sides[i].id].name)}</span></div>` : '<div class="slot empty"><small>side mount</small></div>'}</div>`;
-    const hand = G.hand;
-    this.panel.innerHTML = `
-      <div class="packtop">
-        <div class="handbox"><small>IN HAND</small>${hand ? `<div class="hh">${gunSVG(hand.id)}<b>${esc(ITEMS[hand.id].name)}</b><span>${((hand.q || 1) * 100) | 0}%</span></div>` : '<div class="hh none">Empty hands<br><small>aim to draw your pistol</small></div>'}
-          ${hand ? '<div class="hb"></div>' : ''}</div>
-        <div class="packtitle"><h2>${esc(PACK_NAMES[P.tier])}</h2><small>two front flaps + a back flap, ${n} slots each · front pocket holds unlimited small items · 2 side mounts</small></div>
-        <button class="x" data-close>✕</button>
-      </div>
-      <div class="bagstage"><div class="${was.includes('bag') ? was : 'bag'}" id="bagEl">
-        <div class="bagface front">
-          <div class="strap l"></div><div class="strap r"></div>
-          <div class="flap"><div class="flaplabel">UPPER FRONT FLAP</div>${flapSlots('front', 0, n)}</div><div class="flap lower"><div class="flaplabel">LOWER FRONT FLAP</div>${flapSlots('front', n, n * 2)}</div>
-          <div class="pocket"><div class="pocketlabel">FRONT POCKET <small>(small items, unlimited)</small></div><div class="pitems">${pocket.length ? pocket.map(([id, c]) => `<div class="pit nav ${this.sel && this.sel.t === 'pocket' && this.sel.id === id ? 'sel' : ''}" data-pocket="${id}"><i style="background:${ITEMS[id].color}"></i>${esc(ITEMS[id].name)} <b>×${c}</b></div>`).join('') : '<em>empty</em>'}</div></div>
-          <div class="buckle"></div>
-        </div>
-        <div class="bagface back"><div class="flap open2"><div class="flaplabel">BACK FLAP</div>${flapSlots('back', 0, n)}</div></div>
-        ${sideHTML(0)}${sideHTML(1)}
-      </div></div>
-      <div class="packbar"><button id="flip">⟲ ${this.packFace === 'front' ? 'Back flap' : 'Front flap'}</button><div id="info"></div></div>`;
-    this.wireClose();
-    const bag = $('#bagEl', this.panel); if (this.packFace === 'back') bag.classList.add('flipped'); else bag.classList.remove('flipped');
-    $('#flip', this.panel).onclick = () => { this.packFace = this.packFace === 'front' ? 'back' : 'front'; sfx('zip', 0.5); bag.classList.toggle('flipped'); $('#flip', this.panel).textContent = `⟲ ${this.packFace === 'front' ? 'Back flap' : 'Front flap'}`; };
-    this.panel.querySelectorAll('[data-face]').forEach(d => d.onclick = () => { const face = d.dataset.face, i = +d.dataset.i; this.sel = P[face][i] ? { t: 'slot', face, i } : null; this.renderPack(); });
-    this.panel.querySelectorAll('[data-side]').forEach(d => d.onclick = () => { const i = +d.dataset.side; this.sel = P.sides[i] ? { t: 'side', i } : null; this.renderPack(); });
-    this.panel.querySelectorAll('[data-pocket]').forEach(d => d.onclick = () => { this.sel = { t: 'pocket', id: d.dataset.pocket }; this.renderPack(); });
-    const hb = $('.hb', this.panel); if (hb) { hb.append(this.btn('Stow', () => { stowHand(); this.renderPack(); }), this.btn('Drop', () => { const g = G.hand; G.hand = null; G.dropped(g); this.renderPack(); })); }
-    this.renderInfo();
-  }
-  renderInfo() {
-    const box = $('#info', this.panel); if (!box) return; const P = G.pack; const s = this.sel; box.innerHTML = '';
-    if (!s) { box.innerHTML = `<small>Select a slot, pocket item or side-mounted gun.</small>`; return; }
-    let e = s.t === 'slot' ? P[s.face][s.i] : s.t === 'side' ? P.sides[s.i] : null; const id = s.t === 'pocket' ? s.id : e && e.id; if (!id) { box.textContent = ''; return; }
-    const it = ITEMS[id]; const info = el('div', 'iinfo'); box.appendChild(info);
-    if (isGun(id)) {
-      const sp = GUN[it.gun];
-      info.innerHTML = `<b>${esc(it.name)}</b> <small>${gunClsLabel(id)} · quality ${((e.q || 1) * 100) | 0}% · dmg ${sp.dmg}${sp.pellets > 1 ? '×' + sp.pellets : ''} · mag ${sp.mag} · worth ${fmt(itemValue(e))} cr</small>`;
-      const loc = s.t === 'side' ? { t: 'side', i: s.i } : { t: 'slot', face: s.face, i: s.i };
-      box.append(this.btn(G.hand ? 'Swap with hands' : 'Hold', () => { holdFrom(loc); this.sel = null; this.renderPack(); }, 'pri'));
-      if (s.t === 'side' && canHolster(id)) box.append(this.btn('Holster in a slot', () => { const free = [...P.front.map((x, i) => ['front', i, x]), ...P.back.map((x, i) => ['back', i, x])].find(a => !a[2]); if (!free) { toast('No free slot to holster in.', 'warn'); return; } const g = takeAt(loc); P[free[0]][free[1]] = g; this.sel = null; this.renderPack(); }));
-      if (s.t === 'slot') box.append(this.btn('Mount on side', () => { const i = P.sides.findIndex(x => !x); if (i < 0) { toast('Both side mounts are in use.', 'warn'); return; } P.sides[i] = takeAt(loc); this.sel = null; this.renderPack(); }));
-      box.append(this.btn('Drop', () => { const g = takeAt(loc); G.dropped(g); this.sel = null; this.renderPack(); }, 'warn'));
-      return;
-    }
-    const c = s.t === 'pocket' ? P.pocket[id] : e.n;
-    info.innerHTML = `<b>${esc(it.name)}</b> ×${c} <small>${esc(it.cat)} · ${fmt(it.value)} cr each${it.use ? ' · ' + Object.entries(it.use).map(([k, v]) => `+${v} ${k}`).join(' ') : ''}</small>`;
-    if (it.use) box.append(this.btn('Use', () => { this.hooks.use(id); this.renderPack(); }, 'pri'));
-    if (id === 'pack_frame') box.append(this.btn('Install on backpack', () => { if (upgradePack()) { this.sel = null; this.renderPack(); } else toast('Pack is at max size.', 'warn'); }, 'pri'));
-    if (id === 'coil') box.append(this.btn('Fit to ship', () => { if (G.ship.coils >= 4) { toast('Ship coil slots are full.', 'warn'); return; } removeItem('coil', 1); G.ship.coils++; toast('Spaceway coil fitted.', 'good'); this.renderPack(); }, 'pri'));
-    if (id === 'tank_ext') box.append(this.btn('Fit to ship', () => { if (G.ship.tank >= 4) { toast('Tank slots are full.', 'warn'); return; } removeItem('tank_ext', 1); G.ship.tank++; toast('Fuel tank extended.', 'good'); this.renderPack(); }, 'pri'));
-    if (id === 'fuel') box.append(this.btn('Refuel ship (+25)', () => { removeItem('fuel', 1); G.fuel = Math.min(100, G.fuel + 25); this.renderPack(); }, 'pri'));
-    if (id !== 'parcel') box.append(this.btn('Discard 1', () => { removeItem(id, 1); this.renderPack(); }, 'warn'));
-  }
 
   // ---------- dialogue ----------
   openTalk(npc, surf, social, mode) {
@@ -288,32 +211,6 @@ export class UI {
       this.panel.querySelectorAll('.rb[data-k]').forEach(rb => { const k = rb.dataset.k; if (!G.tech[k]) rb.append(this.btn('Research', () => { if (!research(k)) toast('Missing requirements.', 'warn'); render(t); }, canResearch(k) ? 'pri' : '')); });
     };
     render(tab);
-  }
-
-  // ---------- ship lockers ----------
-  openLockers() {
-    const render = () => {
-      const pk = [];
-      for (const face of ['front', 'back']) G.pack[face].forEach((e, i) => { if (e) pk.push({ e, src: { t: 'slot', face, i } }); });
-      G.pack.sides.forEach((e, i) => { if (e) pk.push({ e, src: { t: 'side', i } }); });
-      Object.entries(G.pack.pocket).forEach(([id, c]) => c > 0 && pk.push({ e: { id, n: c }, src: { t: 'pocket' } }));
-      const lk = G.lockers.map((L, li) => `<div class="locker"><div class="lh">LOCKER ${li + 1}</div><div class="lslots">${L.map((e, i) => `<div class="nav" data-l="${li}" data-i="${i}">${this.slotHTML(e)}</div>`).join('')}</div></div>`).join('');
-      const bagrows = pk.map((x, i) => `<div class="pk nav" data-p="${i}"><i style="background:${ITEMS[x.e.id].color}"></i>${esc(ITEMS[x.e.id].name)}${x.e.n ? ' ×' + x.e.n : ''} <small>→ locker</small></div>`).join('');
-      this.open('lockers', `${this.head('Ship Lockers', 'click your pack item to stow it · click a locker item to take it back')}<div class="lockwrap"><div class="lbag"><h3>Backpack</h3>${bagrows || '<em>empty</em>'}</div><div class="lgrid">${lk}</div></div>`, 'lockpanel'); this.wireClose();
-      this.panel.querySelectorAll('[data-p]').forEach(d => d.onclick = () => {
-        const x = pk[+d.dataset.p]; const stash = (e) => { for (const L of G.lockers) { if (!e.uid) { const ex = L.find(s => s && s.id === e.id && !s.uid); if (ex) { ex.n += e.n; return true; } } } for (const L of G.lockers) { const i = L.indexOf(null); if (i >= 0) { L[i] = e; return true; } } return false; };
-        if (x.e.uid) { const g = takeAt(x.src); if (!stash(g)) { putAt(x.src, g); toast('Lockers are full.', 'warn'); } }
-        else { if (stash({ id: x.e.id, n: x.e.n })) removeItem(x.e.id, x.e.n); else toast('Lockers are full.', 'warn'); }
-        render();
-      });
-      this.panel.querySelectorAll('[data-l]').forEach(d => d.onclick = () => {
-        const L = G.lockers[+d.dataset.l], i = +d.dataset.i, e = L[i]; if (!e) return;
-        if (e.uid) { if (addGun(e)) L[i] = null; else toast('No side mount or holster slot free.', 'warn'); }
-        else { const left = addItem(e.id, e.n); if (left === 0) L[i] = null; else if (left < e.n) { e.n = left; toast('Pack is nearly full.', 'warn'); } else toast('Pack is full.', 'warn'); }
-        render();
-      });
-    };
-    render();
   }
 
   // ---------- your shop ----------

@@ -16,8 +16,8 @@ export const uid = () => G.uid++;
 
 export function newPack(tier = 0) {
   const n = PACK_SLOTS[tier];
-  // two front flaps (upper n slots, lower n slots) + one back flap (n slots); a pocket for unlimited small items; two side mounts
-  return { tier, front: Array(n * 2).fill(null), back: Array(n).fill(null), pocket: {}, sides: [null, null] };
+  // a school backpack: one zipper splits it into two halves of n slots each (front = base half, back = cover half); a small front pocket for unlimited small items; two side mounts
+  return { tier, front: Array(n).fill(null), back: Array(n).fill(null), pocket: {}, sides: [null, null] };
 }
 export function newLockers() { return Array.from({ length: 6 }, () => Array(8).fill(null)); }
 export function resetGame() {
@@ -132,9 +132,8 @@ export function craft(r) {
 export function upgradePack() {
   if (G.pack.tier >= 3 || !removeItem('pack_frame', 1)) return false;
   const p = G.pack; const old = PACK_SLOTS[p.tier]; p.tier++; const n = PACK_SLOTS[p.tier];
-  const A = p.front.slice(0, old), B = p.front.slice(old, old * 2); while (A.length < n) A.push(null); while (B.length < n) B.push(null); p.front = [...A, ...B];
-  while (p.back.length < n) p.back.push(null);
-  toast(`Pack upgraded: ${n} slots per flap`, 'good'); return true;
+  while (p.front.length < n) p.front.push(null); while (p.back.length < n) p.back.push(null); void old;
+  toast(`Pack upgraded: ${n} slots per half`, 'good'); return true;
 }
 
 // ---- save/load ----
@@ -143,6 +142,11 @@ export function save() {
 }
 export function load() {
   try { const s = JSON.parse(localStorage.getItem('rimrunner_save_v1')); if (!s || !s.pack) return false; Object.assign(G, s);
-    const n = PACK_SLOTS[G.pack.tier]; if (G.pack.front.length === n) G.pack.front = [...G.pack.front, ...Array(n).fill(null)];   // migrate old single-flap saves
+    const n = PACK_SLOTS[G.pack.tier], P = G.pack;   // migrate older layouts (single flap, three flaps, 10-slot tier) to two halves of n
+    if (P.front.length !== n || P.back.length !== n) {
+      const all = [...P.front, ...P.back].filter(Boolean); P.front = Array(n).fill(null); P.back = Array(n).fill(null);
+      all.slice(0, 2 * n).forEach((e, k) => { (k < n ? P.front : P.back)[k % n] = e; });
+      for (const e of all.slice(2 * n)) if (!e.uid) addItem(e.id, e.n || 1);   // overflow from the old 10-slot tier goes back in where it fits
+    }
     return true; } catch (e) { return false; }
 }
