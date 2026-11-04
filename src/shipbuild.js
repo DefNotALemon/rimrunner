@@ -4,6 +4,7 @@ import { Batch, signTex } from './interior-kit.js';
 import { rng } from './util.js';
 import { rollLoot, ROOM_LABEL, isVault } from './ships.js';
 import { WallKit, STYLE_OF_ROOM } from './wallkit.js';
+import { newShipViewports, planWindows, drawWindow } from './viewport.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const UB = new THREE.BoxGeometry(1, 1, 1).toNonIndexed(), UC = new THREE.CylinderGeometry(1, 1, 1, 14).toNonIndexed();
@@ -53,6 +54,7 @@ const RS = {
 export function buildShip(ship, S) {
   const r = rng(ship.seed ^ 0x77aa), corp = ship.corp, H = ship.H, W = ship.W;
   const bt = new Batch(); const kit = new WallKit(bt, rng(ship.seed ^ 0x3c3c)); S.wallStats = kit.stats; S.lamps = []; S.containers = []; S.doors = []; S.portDoors = [];
+  const { vp: VPS, env: winEnv } = newShipViewports(ship, S), rwin = rng(ship.seed ^ 0x71d0), winDirt = ship.cls.calm ? 0 : Math.min(0.4, 0.06 * (ship.contract.depth || 1)); S.viewports = VPS;
   const jit = (col, a = 0.06) => { _c.set(col); const k = 1 + (r() - 0.5) * a * 2; return _c.setRGB(Math.min(1, _c.r * k), Math.min(1, _c.g * k), Math.min(1, _c.b * k)).getHex(); };
   const box = (kind, col, x0, x1, y0, y1, z0, z1) => { _m.compose(_p.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), _q.identity(), _s.set(Math.max(1e-3, x1 - x0), Math.max(1e-3, y1 - y0), Math.max(1e-3, z1 - z0))); bt.put(kind, UB, _m, col); };
   const cyl = (kind, col, cx, cz, rad, y0, y1) => { _m.compose(_p.set(cx, (y0 + y1) / 2, cz), _q.identity(), _s.set(rad, y1 - y0, rad)); bt.put(kind, UC, _m, col); };
@@ -89,12 +91,10 @@ export function buildShip(ship, S) {
     const bx = (kind, c, s0, s1, y0, y1, off0, off1) => axis === 'x' ? box(kind, c, s0, s1, y0, y1, at + off0, at + off1) : box(kind, c, at + off0, at + off1, y0, y1, s0, s1);
     const cl = (s0, s1) => axis === 'x' ? col(s0, s1, at - t / 2, at + t / 2, hh) : col(at - t / 2, at + t / 2, s0, s1, hh);
     // viewports of hull walls are placed first so the wall kit leaves their frames clear
-    const vps = [];
-    if (hull && b - a >= 4) {
-      const inner = o1 === -2 ? o2 : o1, m = roomOf(inner), k = inner >= 0 ? owners[inner].kind : '', sgn = o1 === -2 ? 1 : -1;
-      const ok = k === 'plaza' || k === 'cor' ? true : m && ['crew', 'canteen', 'office', 'control', 'lab', 'medbay', 'barracks', 'cooling', 'guardroom'].includes(m.type);
-      if (ok) { const n = Math.floor((b - a) / (k === 'cor' || k === 'plaza' ? 4.5 : 6)) || 1;
-        for (let q = 0; q < n; q++) { const cc = a + (q + 0.5) * (b - a) / n, w = Math.min(r.range(1.8, 3.4), (b - a) / n - 1.4); if (w < 1.2 || r() < (k === 'cor' || k === 'plaza' ? 0.08 : 0.25)) continue; if (gaps.some(g => Math.abs(g[0] - cc) < g[1] / 2 + w / 2 + 0.6)) continue; vps.push({ cc, w, sgn }); } }
+    let vps = [];
+    if (hull && b - a >= 2.4) {   // real windows (viewport.js): layout by the space behind them
+      const inner = o1 === -2 ? o2 : o1, m = roomOf(inner), k = inner >= 0 ? owners[inner].kind : '';
+      vps = planWindows(rwin, { a, b, gaps: gaps.map(g => g[1] === 2.6 && !g[2] && axis === 'z' && (at === 0 || at === W) ? [g[0], 7.2, false] : g), kind: k, type: m && m.type, top: m ? Math.min(m.H, hh) : hh, gallery: k === 'cor' && axis === 'z' && (at === 0 || at === W), dirt: winDirt });
     }
     // wall-kit faces: every non-hull side of this run gets a style (room type -> look, corridors by corp, damaged stretches deeper in)
     const dep = ship.cls.calm ? 0 : (ship.contract.depth || 1), dmgBase = Math.min(0.2, 0.02 + 0.03 * dep), dsides = [];
@@ -133,12 +133,9 @@ export function buildShip(ship, S) {
     }
     seg(cur, b);
     vert(axis, at, a, t, hh); vert(axis, at, b, t, hh);
-    // viewports: hull walls of spaces with a view show the stars
-    for (const { cc, w, sgn } of vps) {
-      const f0 = sgn < 0 ? -t / 2 - 0.06 : t / 2, f1 = sgn < 0 ? -t / 2 : t / 2 + 0.06, g0 = sgn < 0 ? -t / 2 - 0.04 : t / 2 + 0.01, g1 = sgn < 0 ? -t / 2 - 0.01 : t / 2 + 0.04;
-      bx('matte', corp.trim, cc - w / 2 - 0.1, cc + w / 2 + 0.1, 1.2, 2.5, f0, f1); bx('emis', 0x01030a, cc - w / 2, cc + w / 2, 1.3, 2.4, g0, g1);
-      for (let s = 0; s < 7; s++) { const sx = cc + r.range(-w / 2 + 0.1, w / 2 - 0.1), sy = r.range(1.4, 2.3); bx('emis', r() < 0.2 ? 0xffd9a0 : 0xcfe0ff, sx, sx + 0.05, sy, sy + 0.05, sgn < 0 ? g0 - 0.01 : g1, sgn < 0 ? g0 : g1 + 0.01); }
-    }
+    // viewports: panes ray-cast the real outside (viewport.js); frames/mullions go into the static batch
+    if (vps.length) { const sgn = o1 === -2 ? 1 : -1, put = (kind, c, s0, s1, y0, y1, d0, d1) => bx(kind, c, s0, s1, y0, y1, Math.min(sgn * (t / 2 + d0), sgn * (t / 2 + d1)), Math.max(sgn * (t / 2 + d0), sgn * (t / 2 + d1)));
+      for (const v of vps) drawWindow(v, put, corp.trim, VPS, axis, at + sgn * (t / 2 + 0.05), sgn); }
   }
   { let len = 0; for (const rn of ship.runs) len += (rn.b - rn.a) * ((rn.o1 >= 0) + (rn.o2 >= 0)); kitScale = Math.min(1, 1.15e6 / (len * 330)); }
   for (const run of ship.runs) wallRun(run);
@@ -180,7 +177,11 @@ export function buildShip(ship, S) {
   // plazas: open double-height squares with pillars, a planted dais, a ring balcony and a skylight
   for (const cv of ship.carves) if (cv.kind === 'plaza') {
     const { x0, x1, z0, z1 } = cv, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, hp = ship.owners[cv.id].H;
-    box('emis', new THREE.Color(corp.light).multiplyScalar(0.8).getHex(), cx - 3, cx + 3, hp - 0.05, hp, cz - 3, cz + 3); S.lamps.push({ x: cx, z: cz, tint: corp.light }); S.lamps.push({ x: x0 + 3, z: z0 + 3, tint: corp.light }); S.lamps.push({ x: x1 - 3, z: z1 - 3, tint: corp.light });
+    { const lc = new THREE.Color(corp.light).multiplyScalar(0.8).getHex(), k = 3; VPS.sky(cx - k, cx + k, cz - k, cz + k, hp - 0.01, { grime: 0.12 + winDirt });   // skylight to the stars, ringed by light strips
+      for (const [a0, a1, b0, b1] of [[-k - 0.15, k + 0.15, -k - 0.15, -k], [-k - 0.15, k + 0.15, k, k + 0.15], [-k - 0.15, -k, -k, k], [k, k + 0.15, -k, k]]) box('matte', corp.trim, cx + a0, cx + a1, hp - 0.12, hp, cz + b0, cz + b1);
+      for (const q of [-1, 1]) { box('matte', corp.trim, cx + q * k / 3 - 0.04, cx + q * k / 3 + 0.04, hp - 0.1, hp, cz - k, cz + k); box('matte', corp.trim, cx - k, cx + k, hp - 0.1, hp, cz + q * k / 3 - 0.04, cz + q * k / 3 + 0.04); }
+      for (const [a0, a1, b0, b1] of [[-k - 0.5, k + 0.5, -k - 0.5, -k - 0.25], [-k - 0.5, k + 0.5, k + 0.25, k + 0.5], [-k - 0.5, -k - 0.25, -k - 0.25, k + 0.25], [k + 0.25, k + 0.5, -k - 0.25, k + 0.25]]) box('emis', lc, cx + a0, cx + a1, hp - 0.05, hp, cz + b0, cz + b1); }
+    S.lamps.push({ x: cx, z: cz, tint: corp.light }); S.lamps.push({ x: x0 + 3, z: z0 + 3, tint: corp.light }); S.lamps.push({ x: x1 - 3, z: z1 - 3, tint: corp.light });
     cyl('metal', jit(0x3a4048), cx, cz, 1.6, 0, 0.4); cyl('emis', acc, cx, cz, 1.64, 0.22, 0.27); cyl('matte', 0x23403a, cx, cz, 1.2, 0.4, 0.46); col(cx - 1.6, cx + 1.6, cz - 1.6, cz + 1.6, 0.46);
     for (const [px, pz] of [[x0 + 3.2, z0 + 3.2], [x1 - 3.2, z0 + 3.2], [x0 + 3.2, z1 - 3.2], [x1 - 3.2, z1 - 3.2]]) { cyl('metal', jit(corp.dado), px, pz, 0.38, 0, hp); cyl('matte', corp.trim, px, pz, 0.43, 1.0, 1.08); cyl('matte', corp.trim, px, pz, 0.43, hp - 0.4, hp - 0.32); col(px - 0.4, px + 0.4, pz - 0.4, pz + 0.4, hp); }
     // balcony rim along the walls: overhead depth, high enough to walk under
@@ -307,7 +308,7 @@ export function buildShip(ship, S) {
       }
     }
     // per-room extras so no two rooms read the same: wall screens, ceiling ducts, pillars
-    { const nScr = r.int(1, 3), scr = []; for (let i = 0; i < nScr; i++) { const back = r() < 0.5, zf = back ? m.z1 - 0.2 : m.z0 + 0.2, x = r.range(m.x0 + 1.4, m.x1 - 1.4); if (hitLane(x - 0.9, x + 0.9, zf - 0.3, zf + 0.3)) continue; if (scr.some(q => q[0] === back && Math.abs(q[1] - x) < 1.8)) continue; scr.push([back, x]); const w = r.range(0.8, 1.6); box('metal', 0x15171a, x - w / 2 - 0.05, x + w / 2 + 0.05, 1.45, 2.05, back ? zf - 0.02 : zf - 0.02, back ? zf + 0.02 : zf + 0.02); box('emis', new THREE.Color(th.acc).multiplyScalar(r.range(0.5, 0.9)).getHex(), x - w / 2, x + w / 2, 1.5, 2.0, back ? zf - 0.04 : zf + 0.0, back ? zf - 0.0 : zf + 0.04); }
+    { const nScr = r.int(1, 3), scr = []; for (let i = 0; i < nScr; i++) { const back = r() < 0.5, zf = back ? m.z1 - 0.2 : m.z0 + 0.2, x = r.range(m.x0 + 1.4, m.x1 - 1.4); if (hitLane(x - 0.9, x + 0.9, zf - 0.3, zf + 0.3)) continue; if (scr.some(q => q[0] === back && Math.abs(q[1] - x) < 1.8)) continue; if (VPS.hits('x', zf, x - 0.9, x + 0.9, 0.7)) continue; scr.push([back, x]); const w = r.range(0.8, 1.6); box('metal', 0x15171a, x - w / 2 - 0.05, x + w / 2 + 0.05, 1.45, 2.05, back ? zf - 0.02 : zf - 0.02, back ? zf + 0.02 : zf + 0.02); box('emis', new THREE.Color(th.acc).multiplyScalar(r.range(0.5, 0.9)).getHex(), x - w / 2, x + w / 2, 1.5, 2.0, back ? zf - 0.04 : zf + 0.0, back ? zf - 0.0 : zf + 0.04); }
       if (r() < 0.6) { const zz = r.range(m.z0 + 1.4, m.z1 - 1.4); cylX('metal', mixc(th.dado, 0x888888, 0.4), m.x0 + 0.3, m.x1 - 0.3, H - 0.4, zz, r.range(0.1, 0.22)); if (r() < 0.5) cylX('metal', th.acc, m.x0 + 0.3, m.x1 - 0.3, H - 0.65, zz + 0.4, 0.06); }
       if (m.x1 - m.x0 > 13 && !['serverhall', 'tankhall', 'cellblock', 'vault', 'evidence'].includes(m.type) && r() < 0.6) for (const fx of [0.3, 0.7]) prop(m.x0 + (m.x1 - m.x0) * fx, (m.z0 + m.z1) / 2 + r.range(-2, 2), 0.55, 0.55, H, (x, z) => { box('metal', mixc(th.dado, 0x777777, 0.3), x - 0.27, x + 0.27, 0, H, z - 0.27, z + 0.27); box('emis', new THREE.Color(th.acc).multiplyScalar(0.6).getHex(), x - 0.28, x + 0.28, 1.0, 1.06, z - 0.28, z + 0.28); }); }
     // ceiling light panels
@@ -351,6 +352,7 @@ export function buildShip(ship, S) {
   }
   bt.flush(S.root);
   kit.flush(S.root);
+  VPS.flush(S.root, winEnv);
 }
 
 const _mats = {};
