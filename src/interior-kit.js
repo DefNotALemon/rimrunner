@@ -5,6 +5,7 @@
 // An item's local +z faces +v (towards the street door); rot=Math.PI faces the back wall, +PI/2 faces +u, -PI/2 faces -u.
 import * as THREE from '../vendor/three.module.js';
 import { surfMat } from './textures.js';
+import { WallKit } from './wallkit.js';
 
 const _v = new THREE.Vector3(), _n = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _nm = new THREE.Matrix3(), _c = new THREE.Color();
 const _p = new THREE.Vector3(), _s = new THREE.Vector3();
@@ -76,10 +77,14 @@ function getBarsMat() {
 }
 
 const TRIM = 0x3a3f46, BASE = 0x2e2924;
+// wall-kit look per building type (shell + partitions); tech-heavy buildings put screens and racks in their partitions
+const BSTYLE = { exchange: 'corp', gunsmith: 'industrial', cantina: 'home', outfitter: 'home', patrol: 'industrial', lease: 'corp', house: 'home', habitat: 'corp' };
+const PSTYLE = { exchange: 'server', patrol: 'server', gunsmith: 'industrial', lease: 'corp' };
+const BACC = { home: 0xffd090, corp: 0x6ac8ff, industrial: 0xd8a24a, server: 0x38a8ff };
 
 export class Ctx {
   constructor(surf, rec, r) {
-    this.surf = surf; this.rec = rec; this.r = r; this.K = rec.K; this.P = rec.P; this.bt = new Batch();
+    this.surf = surf; this.rec = rec; this.r = r; this.K = rec.K; this.P = rec.P; this.bt = new Batch(); this.kit = new WallKit(this.bt, r); this.style = BSTYLE[rec.id] || 'corp'; this.partStyle = PSTYLE[rec.id] || this.style;
     const ns = rec.dv[1] !== 0;   // (rec.door is the street-side spot; dv says which wall the door is in)
     this.W = ns ? rec.w : rec.d; this.D = ns ? rec.d : rec.w; this.H = rec.H; this.Hc = rec.H - 0.04;
     this.u0 = -this.W / 2 + 0.16; this.u1 = this.W / 2 - 0.16; this.vb = -this.D / 2 + 0.16; this.vf = this.D / 2 - 0.16;
@@ -103,6 +108,9 @@ export class Ctx {
     const strip = (a, b, c, d) => { this.lb('matte', dado, a, b, c, d, 0, y); this.lb('matte', 0x3a3028, a, b, c, d, y, y + 0.05); this.lb('matte', col, a, b, c, d, y + 0.05, Hc); };   // dado, rail, plaster stacked (never sharing a face range)
     strip(u0, u0 + t, vb, vf); strip(u1 - t, u1, vb, vf); strip(u0, u1, vb, vb + t);
     const dw = 1.15; strip(u0, -dw, vf - t, vf); strip(dw, u1, vf - t, vf); this.lb('matte', col, -dw, dw, vf - t, vf, 2.5, Hc);
+    // wall kit: low wainscot, rail and cap only on the outer walls (window panes sit above 0.85 m)
+    const lo = { col, low: true, dens: 0 }; this.dress(this.mkFace(u0 + t, 0, 1, 0, false), vb, vf, lo); this.dress(this.mkFace(u1 - t, 0, -1, 0, false), vb, vf, lo);
+    this.dress(this.mkFace(0, vb + t, 0, 1, true), u0, u1, lo); this.dress(this.mkFace(0, vf - t, 0, -1, true), u0, -dw, lo); this.dress(this.mkFace(0, vf - t, 0, -1, true), dw, u1, lo);
   }
   // ---- walls ----
   // axis 'u': wall runs along u at fixed v. axis 'v': wall runs along v at fixed u. gaps: [centre, width, 'win'?]
@@ -110,7 +118,7 @@ export class Ctx {
     const t = o.t || 0.2, col = o.col ?? this.wallCol, y1 = o.h ?? this.Hc;
     const box = (kind, c, s0, s1, y0, yy1, ex = 0) => axis === 'u' ? this.lb(kind, c, s0, s1, at - t / 2 - ex, at + t / 2 + ex, y0, yy1) : this.lb(kind, c, at - t / 2 - ex, at + t / 2 + ex, s0, s1, y0, yy1);
     const colr = (s0, s1, h) => axis === 'u' ? this.col(s0, s1, at - t / 2, at + t / 2, h) : this.col(at - t / 2, at + t / 2, s0, s1, h);
-    const seg = (s0, s1) => { if (s1 - s0 < 0.03) return; box('matte', col, s0, s1, 0, y1); box('matte', o.base ?? BASE, s0, s1, 0, 0.12, 0.015); colr(s0, s1, y1); };
+    const seg = (s0, s1) => { if (s1 - s0 < 0.03) return; for (const sg of [-1, 1]) this.dress(axis === 'u' ? this.mkFace(0, at + sg * t / 2, 0, sg, true) : this.mkFace(at + sg * t / 2, 0, sg, 0, false), s0, s1, { style: o.style ?? this.partStyle, col, top: y1 }); box('matte', col, s0, s1, 0, y1); box('matte', o.base ?? BASE, s0, s1, 0, 0.12, 0.015); colr(s0, s1, y1); };
     let cur = a; const gs = gaps.slice().sort((p, q) => p[0] - q[0]);
     for (const [c, w, kind] of gs) {
       const g0 = c - w / 2, g1 = c + w / 2; seg(cur, g0);
@@ -123,6 +131,9 @@ export class Ctx {
     seg(cur, b);
   }
   gapsTo(arr) { return arr; }
+  // wall-kit face on the finished surface at local (uS,vS), facing local (nu,nv); run along u when runU else along v
+  mkFace(uS, vS, nu, nv, runU) { const o = this.P(uS, vS), n = this.P(uS + nu, vS + nv), r = runU ? this.P(uS + 1, vS) : this.P(uS, vS + 1); return this.kit.face(o.x, o.z, n.x - o.x, n.z - o.z, r.x - o.x, r.z - o.z); }
+  dress(f, c0, c1, o) { const dado = this.dado ?? 0x6e625a; this.kit.dress(f, c0, c1, { style: o.style ?? this.style, top: o.top ?? this.Hc, wall: o.col ?? this.wallCol, dado, acc: BACC[o.style ?? this.style] ?? 0xffd090, dmg: 0, dens: o.dens ?? 0.5, low: o.low }); }
 
   // ---- lights / signs ----
   light(u, v, o = {}) {
@@ -154,7 +165,7 @@ export class Ctx {
     return [w, d, h];
   }
   art(u, v, y, w, h, col, rot = 0, kind = 'matte') { const it = new Item(this, u, v, rot, 0); it.box(col, 0, y, 0, w, h, 0.04, kind); }   // thin panel on a wall
-  finish() { return this.bt.flush(this.surf.root); }
+  finish() { this.kit.flush(this.surf.root); return this.bt.flush(this.surf.root); }
 }
 
 // ------------------------------------------------------------------ item library
