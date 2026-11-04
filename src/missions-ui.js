@@ -213,7 +213,9 @@ class MissionWorld {
 
   // ---------------- HUD ----------------
   worldTarget(mode, m, o) {
-    const app = this.app, L = M.parseLoc(o.loc); if (!L) return null;
+    const app = this.app, L = M.parseLoc(o.loc);
+    if (mode === 'station' && (!L || this.stn.loc !== o.loc)) return V(-6.1, 1.6, this.stn.mine.z);   // objective is elsewhere: point at the hatch
+    if (!L) return null;
     if (mode === 'space') { const sp = app.space; if (!sp.sys || sp.sys.index !== L.sys) return null; if (L.t === 'p') return sp.planetObjs[L.i] ? sp.planetObjs[L.i].pos.clone() : null; const so = this.ssp.byId(`${L.sys}:${L.i}`); return so ? so.pos.clone() : null; }
     if (mode === 'foot') { const surf = app.surf; if (L.t !== 'p' || L.sys !== G.sysIndex || !surf.planet || surf.planet.i !== L.i || !o.spot) return null; const s = this.spotXZ(o, surf); return V(s.x, surf.heightAt(s.x, s.z) + 2.2, s.z); }
     if (mode === 'station') { if (this.stn.loc === o.loc) return this.stn.targetPos(o, m); return V(-6.1, 1.6, this.stn.mine.z); }
