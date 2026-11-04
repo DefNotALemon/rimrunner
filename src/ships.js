@@ -8,6 +8,7 @@ export const CORPS = {
   kessel:   { name: 'Kessel-Voss Industrial', short: 'KESSEL-VOSS', tag: 'grimy hazard-yellow heavy metal', wall: 0x9d947f, dado: 0x5a4c3c, floor: 0x3d372f, floor2: 0x312d27, trim: 0xe0a020, accent: 0xff8a1a, light: 0xffd9a0, sign: ['#2a1d08', '#ffc23a'], sec: 'mixed' },
   meridian: { name: 'Meridian Defense Systems', short: 'MERIDIAN', tag: 'olive-drab military, red stencil', wall: 0x7a8570, dado: 0x434a3c, floor: 0x2a2d30, floor2: 0x34383b, trim: 0xb02a2a, accent: 0xff3b3b, light: 0xffe6d0, sign: ['#1a1d16', '#ff5a4a'], sec: 'soldier' },
   orbitex:  { name: 'Orbitex Syndicate', short: 'ORBITEX', tag: 'dark purple luxury, chrome', wall: 0x5a5078, dado: 0x2f2846, floor: 0x211c2e, floor2: 0x2a2438, trim: 0xb78cff, accent: 0xd04bff, light: 0xe6d0ff, sign: ['#140e22', '#d6a8ff'], sec: 'drone' },
+  rimway:   { name: 'Rimway Port Authority', short: 'RIMWAY PORT', tag: 'warm-lit civilian orbital port', wall: 0xc8bfae, dado: 0x6a5a48, floor: 0x3a3632, floor2: 0x45403a, trim: 0x3aa0c8, accent: 0xffb050, light: 0xfff0d8, sign: ['#1a1612', '#ffc878'], sec: 'drone' },
   tallow:   { name: 'Tallow & Ward Chemical', short: 'TALLOW & WARD', tag: 'pale green clinical, spill stains', wall: 0xc9d6bf, dado: 0x4c6a46, floor: 0x33433a, floor2: 0x2a372f, trim: 0x7bd04a, accent: 0xb6ff3a, light: 0xeaffd0, sign: ['#10200c', '#b6ff3a'], sec: 'mixed' },
 };
 
@@ -18,6 +19,7 @@ const OWN = {
   factory: { kessel: 5, orbitex: 2, halcyon: 2, meridian: 2 },
   armory:  { meridian: 6, kessel: 1 },
   prison:  { meridian: 4, orbitex: 2, kessel: 2 },
+  station: { rimway: 1 },
 };
 
 // room type -> [min w, max w, weight]; 'vault' and 'control' are forced in
@@ -27,8 +29,9 @@ const ROOMS = {
   factory: { assembly: [14, 24, 5], foundry: [10, 16, 2], storage: [8, 14, 3], office: [8, 10, 1], crew: [8, 12, 2], power: [8, 12, 2], control: [8, 10, 1] },
   armory:  { armoryhall: [10, 18, 5], barracks: [8, 12, 2], guardroom: [8, 10, 2], storage: [8, 12, 2], range: [10, 14, 1], control: [8, 10, 1] },
   prison:  { cellblock: [12, 20, 5], guardroom: [8, 10, 2], canteen: [8, 12, 2], medbay: [8, 10, 1], storage: [8, 10, 1], control: [8, 10, 1] },
+  station: { canteen: [10, 16, 4], crew: [8, 12, 2], office: [8, 10, 2], medbay: [8, 10, 1], storage: [8, 12, 2], control: [8, 10, 1] },   // open-world orbital port (stations.js): bar, quarters, offices
 };
-const VAULT = { server: 'vault', chem: 'vault', factory: 'vault', armory: 'vault', prison: 'evidence' };
+const VAULT = { server: 'vault', chem: 'vault', factory: 'vault', armory: 'vault', prison: 'evidence', station: 'crew' };   // a civil port's 'vault' is just the back room with the crew lockers
 
 export const CLASSES = {
   server_m:   { label: 'Server Station', size: 'medium', family: 'server', corridors: 2, W: [64, 80], band: [11, 14], ports: [1, 2], minDepth: 0, danger: 1.0, loot: 1.0, ai: 'drone', time: 14 },
@@ -44,6 +47,7 @@ export const CLASSES = {
   armory_l:   { label: 'Fortress Armory', size: 'large', family: 'armory', corridors: 3, W: [100, 130], band: [12, 15], ports: [2, 3], minDepth: 5, danger: 2.6, loot: 2.4, ai: 'soldier', time: 24 },
   prison_l:   { label: 'Maximum-Security Prison', size: 'large', family: 'prison', corridors: 3, W: [100, 130], band: [12, 15], ports: [2, 3], minDepth: 5, danger: 2.4, loot: 2.0, ai: 'mixed', time: 24 },
   server_b:   { label: 'Server Behemoth', size: 'behemoth', family: 'server', corridors: 5, W: [190, 240], band: [13, 16], ports: [3, 4], minDepth: 6, danger: 3.0, loot: 3.2, ai: 'drone', time: 34 },
+  station_civ: { label: 'Orbital Port', size: 'small', family: 'station', corridors: 1, W: [46, 58], band: [11, 13], ports: [1, 1], minDepth: 99, danger: 0, loot: 0.6, ai: 'drone', time: 1e6, calm: true },   // open-world stations only (minDepth 99 keeps it off the Extraction board)
   factory_b:  { label: 'Foundry Behemoth', size: 'behemoth', family: 'factory', corridors: 5, W: [190, 240], band: [13, 16], ports: [3, 4], minDepth: 7, danger: 3.2, loot: 3.4, ai: 'mixed', time: 36, loot_t: 'metal' },
 };
 
@@ -349,12 +353,14 @@ export const LOOT = {
   gun:     [['gunpart', 8, 0], ['barrel', 6, 0], ['ammo', 8, 0], ['hpistol', 1.5, 1], ['shotgun', 1.3, 1], ['coach', 1.5, 0], ['rifle', 1.1, 2], ['pulsepistol', 0.8, 3]],
   metal:   [['steel', 7, 0], ['iron_plate', 8, 0], ['alloy', 3, 1], ['titanium_ore', 3, 1], ['gunpart', 3, 0], ['servo', 2, 1], ['platinum', 1, 3], ['ammo', 2, 0]],
   armory:  [['ammo', 9, 0], ['gunpart', 5, 0], ['barrel', 4, 0], ['hpistol', 2, 0], ['shotgun', 2, 0], ['rifle', 2, 1], ['pulsepistol', 1.2, 2], ['pulsecarbine', 1.0, 3], ['scatter', 0.8, 4], ['railrifle', 0.5, 5], ['medkit', 3, 0], ['armor_plate', 2, 0]],
+  station: [['ration', 6, 0], ['water', 6, 0], ['medkit', 3, 0], ['o2_tank', 3, 0], ['ammo', 3, 0], ['data_chip', 2, 0], ['circuit', 2, 0], ['fuel', 1, 0]],
   prison:  [['ration', 4, 0], ['medkit', 3, 0], ['ammo', 5, 0], ['keycard', 2, 0], ['stimpack', 2, 0], ['gunpart', 2, 0], ['coach', 1, 0], ['data_chip', 3, 0]],
 };
 export const VAULT_LOOT = {
   server: [['core', 6, 0], ['wafer', 5, 0], ['schematic', 3, 1], ['ai_core', 1, 3]], chem: [['reagent', 5, 0], ['stimpack', 4, 0], ['schematic', 3, 1], ['hymnstone', 0.6, 3]],
   factory: [['ai_core', 5, 0], ['schematic', 4, 0], ['alloy', 4, 0], ['platinum', 2, 2]], armory: [['railrifle', 2, 2], ['pulsecarbine', 3, 1], ['scatter', 3, 1], ['armor_plate', 4, 0], ['schematic', 3, 0]],
   prison: [['keycard', 4, 0], ['schematic', 3, 0], ['ruby', 3, 0], ['pulsepistol', 2, 1]],
+  station: [['medkit', 4, 0], ['data_chip', 3, 0], ['o2_tank', 3, 0]],
 };
 export function rollLoot(r, ship, vault, tier) {
   const fam = ship.cls.family; const t = vault ? VAULT_LOOT[fam] : LOOT[ship.cls.loot_t || fam] || LOOT[fam];

@@ -8,7 +8,7 @@ export const G = {
   skills: { mining: 0, gunsmith: 0, trading: 0, piloting: 0, lockpick: 0, speech: 0 },
   rep: 0, heat: 0, bounty: 0, fines: [], quests: [], doneQuests: 0, knownBuyers: {}, shop: null,
   lockers: [], fuel: 100, hull: 100, ship: { coils: 0, tank: 0 }, seed: 1971, sysIndex: 0, planetIndex: 0,
-  visited: {}, charted: 0, time: 0, uid: 1, confiscated: null,
+  visited: {}, charted: 0, time: 0, uid: 1, confiscated: null, missions: null,
   toastFn: null, dropped: null,
 };
 export const toast = (m, kind = '') => { G.toastFn && G.toastFn(m, kind); };
@@ -21,7 +21,7 @@ export function newPack(tier = 0) {
 }
 export function newLockers() { return Array.from({ length: 6 }, () => Array(8).fill(null)); }
 export function resetGame() {
-  G.pack = newPack(0); G.lockers = newLockers(); G.hand = null; G.held = null;
+  G.pack = newPack(0); G.lockers = newLockers(); G.hand = null; G.held = null; G.missions = null;
   addGun({ id: 'pistol', q: 1, uid: uid() });
   addItem('ration', 3); addItem('water', 3); addItem('ammo', 4); addItem('medkit', 1);
 }
@@ -141,7 +141,7 @@ export function save() {
   try { const o = { ...G }; delete o.toastFn; delete o.dropped; o.savedAt = Date.now(); localStorage.setItem('rimrunner_save_v1', JSON.stringify(o)); } catch (e) {}
 }
 export function load() {
-  try { const s = JSON.parse(localStorage.getItem('rimrunner_save_v1')); if (!s || !s.pack) return false; Object.assign(G, s);
+  try { const s = JSON.parse(localStorage.getItem('rimrunner_save_v1')); if (!s || !s.pack) return false; Object.assign(G, s); if (!s.missions) G.missions = null;   // saves from before missions.js load with none
     const n = PACK_SLOTS[G.pack.tier], P = G.pack;   // migrate older layouts (single flap, three flaps, 10-slot tier) to two halves of n
     if (P.front.length !== n || P.back.length !== n) {
       const all = [...P.front, ...P.back].filter(Boolean); P.front = Array(n).fill(null); P.back = Array(n).fill(null);

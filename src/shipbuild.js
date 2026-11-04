@@ -97,10 +97,10 @@ export function buildShip(ship, S) {
         for (let q = 0; q < n; q++) { const cc = a + (q + 0.5) * (b - a) / n, w = Math.min(r.range(1.8, 3.4), (b - a) / n - 1.4); if (w < 1.2 || r() < (k === 'cor' || k === 'plaza' ? 0.08 : 0.25)) continue; if (gaps.some(g => Math.abs(g[0] - cc) < g[1] / 2 + w / 2 + 0.6)) continue; vps.push({ cc, w, sgn }); } }
     }
     // wall-kit faces: every non-hull side of this run gets a style (room type -> look, corridors by corp, damaged stretches deeper in)
-    const dep = ship.contract.depth || 1, dmgBase = Math.min(0.2, 0.02 + 0.03 * dep), dsides = [];
+    const dep = ship.cls.calm ? 0 : (ship.contract.depth || 1), dmgBase = Math.min(0.2, 0.02 + 0.03 * dep), dsides = [];
     for (const [o, sgn] of [[o1, -1], [o2, 1]]) { if (o < 0) continue; const m = roomOf(o), kd = owners[o].kind;
       let style = m ? (STYLE_OF_ROOM[m.type] || 'corp') : kd === 'duct' ? 'duct' : (corp.short.charCodeAt(0) & 1) ? 'industrial' : 'corp';
-      if (!m && kd !== 'duct' && r() < 0.08 + 0.04 * dep) style = 'derelict'; else if (m && r() < 0.04 * dep) style = 'derelict';
+      if (!m && kd !== 'duct' && dep && r() < 0.08 + 0.04 * dep) style = 'derelict'; else if (m && r() < 0.04 * dep) style = 'derelict';
       if (!m && kitScale < 0.6 && style !== 'duct') style = 'lite';
       const off = m ? t / 2 + 0.03 : t / 2 + 0.02, th = m ? m.theme : { wall: corp.wall, dado: corp.dado, acc: corp.accent };
       const fc = axis === 'x' ? kit.face(0, at + sgn * off, 0, sgn, 1, 0) : kit.face(at + sgn * off, 0, sgn, 0, 0, 1);
