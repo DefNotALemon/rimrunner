@@ -1,7 +1,7 @@
 // Look: the one place that decides how Rimrunner's materials and light behave.
 //  - LOOKS: art-direction presets (tone mapping, exposure, grime, wet, bloom, grade, light balance). Switch live: F6.
 //  - Material source: 'scan' (CC0 ambientCG PBR sets, assets/materials) or 'proc' (procedural, derived maps). Switch live: F8.
-//  - FX tier: 'high' (MSAA + bloom + grade), 'med' (grade only), 'off' (straight to canvas). Switch live: F7.
+//  - FX tier: 'high' (MSAA + full bloom + grade), 'med' (quarter-res bloom + grade), 'off' (straight to canvas). Switch live: F7.
 //  - Image based lighting: a procedural sky env, prefiltered with PMREM, re-baked as the day moves. Indoors it is faded out.
 //  - enhance(): patches any MeshStandardMaterial with world-space grime, macro colour variation, triplanar detail normal/roughness
 //    (so UV-less batched furniture and terrain get scan-quality micro detail too), puddles and wet sheen.
@@ -20,25 +20,25 @@ export const LOOKS = {
     name: 'Frontier Grit', blurb: 'Lived-in industrial colony. Warm sun, dusty air, dirty wall bases, rain streaks, worn paint. Filmic and a little desaturated.',
     tone: 'aces', exposure: 1.0, env: 0.85, hemi: 0.18, sun: 1.0, sunTint: [1, 0.96, 0.9], fog: 1.0,
     glow: [0.02, 0.03, 0.05], grime: 0.75, macro: 0.32, detailN: 1.0, detailR: 0.5, rough: 0.0, wet: 0.0, normal: 1.0, ao: 1.0, albedoSat: 1.0,
-    bloom: [0.22, 0.6, 0.92], grade: { sat: 0.94, con: 1.06, tint: [1.02, 1.0, 0.97], vig: 0.22, grain: 0.03 }, lamp: 1.0, lampWarm: 0.0,
+    bloom: [0.22, 0.6, 0.92], grade: { sat: 0.94, con: 1.06, tint: [1.02, 1.0, 0.97], sh: [0.93, 1.0, 1.08], hi: [1.07, 1.0, 0.9], vig: 0.22, grain: 0.03 }, lamp: 1.0, lampWarm: 0.0,
   },
   chrome: {
     name: 'Clean Chrome', blurb: 'Optimistic mid-century sci-fi. Bright, crisp, glossy: polished metal, little dirt, long clean reflections. Neutral tone mapping keeps paint colours true.',
     tone: 'neutral', exposure: 1.08, env: 1.25, hemi: 0.22, sun: 1.05, sunTint: [1, 0.98, 0.94], fog: 0.55,
     glow: [0.03, 0.04, 0.05], grime: 0.12, macro: 0.12, detailN: 0.55, detailR: 0.25, rough: -0.22, wet: 0.0, normal: 0.7, ao: 0.6, albedoSat: 1.1,
-    bloom: [0.14, 0.5, 1.0], grade: { sat: 1.06, con: 1.03, tint: [1.0, 1.01, 1.03], vig: 0.12, grain: 0.0 }, lamp: 0.9, lampWarm: -0.2,
+    bloom: [0.14, 0.5, 1.0], grade: { sat: 1.06, con: 1.03, tint: [1.0, 1.01, 1.03], sh: [0.97, 1.0, 1.04], hi: [1.03, 1.0, 0.97], vig: 0.12, grain: 0.0 }, lamp: 0.9, lampWarm: -0.2,
   },
   noir: {
     name: 'Neon Noir', blurb: 'Wet, moody, high contrast. Dim sun, puddled ground that mirrors the lamps, hot bloom on every emissive, teal shadows and amber highlights.',
     tone: 'agx', exposure: 0.92, env: 0.55, hemi: 0.12, sun: 0.78, sunTint: [0.9, 0.95, 1.0], fog: 1.8,
     glow: [0.12, 0.36, 0.6], grime: 0.9, macro: 0.35, detailN: 1.1, detailR: 0.45, rough: -0.08, wet: 1.0, normal: 1.1, ao: 1.2, albedoSat: 0.9,
-    bloom: [0.55, 0.85, 0.7], grade: { sat: 1.12, con: 1.16, tint: [0.97, 1.0, 1.06], vig: 0.38, grain: 0.05 }, lamp: 1.5, lampWarm: 0.1,
+    bloom: [0.55, 0.85, 0.7], grade: { sat: 1.12, con: 1.16, tint: [0.97, 1.0, 1.06], sh: [0.84, 1.0, 1.14], hi: [1.12, 1.0, 0.86], vig: 0.38, grain: 0.05 }, lamp: 1.5, lampWarm: 0.1,
   },
   painted: {
     name: 'Painted Matte', blurb: 'Stylised and soft, like gouache concept art. Flat colour fields, gentle detail, saturated shadows, almost no specular. Cheapest to run, friendliest to a low-poly look.',
     tone: 'neutral', exposure: 1.0, env: 1.0, hemi: 0.3, sun: 0.9, sunTint: [1, 0.97, 0.92], fog: 0.8,
     glow: [0.04, 0.04, 0.06], grime: 0.15, macro: 0.2, detailN: 0.3, detailR: 0.1, rough: 0.28, wet: 0.0, normal: 0.35, ao: 0.4, albedoSat: 1.25,
-    bloom: [0.1, 0.5, 1.0], grade: { sat: 1.12, con: 0.98, tint: [1.02, 1.0, 0.98], vig: 0.1, grain: 0.0 }, lamp: 1.0, lampWarm: 0.0,
+    bloom: [0.1, 0.5, 1.0], grade: { sat: 1.12, con: 0.98, tint: [1.02, 1.0, 0.98], sh: [0.94, 0.98, 1.08], hi: [1.05, 1.0, 0.94], vig: 0.1, grain: 0.0 }, lamp: 1.0, lampWarm: 0.0,
   },
 };
 export const LOOK_ORDER = ['frontier', 'chrome', 'noir', 'painted'];
@@ -60,7 +60,7 @@ const PROC = {
 export const Look = {
   id: 'frontier', cfg: LOOKS.frontier, source: 'scan', tier: 'high', renderer: null, onChange: null, indoor: 0, autoTier: true, hooks: [], day: null,
   U: {   // shared uniforms: changing these retunes every patched material live, no recompiles
-    grime: { value: 0.75 }, macro: { value: 0.3 }, detailN: { value: 1 }, detailR: { value: 0.5 }, rough: { value: 0 }, wet: { value: 0 }, ldA: { value: 0.35 },
+    grime: { value: 0.75 }, macro: { value: 0.3 }, detailN: { value: 1 }, detailR: { value: 0.5 }, rough: { value: 0 }, wet: { value: 0 }, ldA: { value: 0.35 }, ao: { value: 1 },
   },
   _loader: new THREE.TextureLoader(), _tex: {}, _surf: [], _scans: {}, _envFor: new Map(), _frame: 0, _scenesSeen: new WeakMap(), _dimEnv: null, _ph: null,
 
@@ -75,17 +75,17 @@ export const Look = {
   save() { try { localStorage.setItem('rimrunner_look', JSON.stringify({ look: this.id, source: this.source, tier: this.tier })); } catch (e) { } },
   set(id, quiet) {
     if (!LOOKS[id]) id = 'frontier'; this.id = id; const c = this.cfg = LOOKS[id], U = this.U;
-    U.grime.value = c.grime; U.macro.value = c.macro; U.detailN.value = c.detailN; U.detailR.value = c.detailR; U.rough.value = c.rough; U.wet.value = c.wet;
+    U.grime.value = c.grime; U.macro.value = c.macro; U.detailN.value = c.detailN; U.detailR.value = c.detailR; U.rough.value = c.rough; U.wet.value = c.wet; U.ao.value = c.ao;
     if (this.renderer) { this.renderer.toneMapping = TONE[c.tone]; this.renderer.toneMappingExposure = c.exposure; }
-    if (this.bloom) { this.bloom.strength = c.bloom[0]; this.bloom.radius = c.bloom[1]; this.bloom.threshold = c.bloom[2]; }
-    if (this.grade) { const g = c.grade, u = this.grade.uniforms; u.sat.value = g.sat; u.con.value = g.con; u.tint.value.set(...g.tint); u.vig.value = g.vig; u.grain.value = g.grain; }
+    if (this.bloom) { this.bloom.strength = c.bloom[0]; this.bloom.radius = c.bloom[1]; this.bloom.threshold = c.bloom[2]; if (this.bloomLite) { this.bloomLite.strength = c.bloom[0] * 1.15; this.bloomLite.radius = Math.min(1, c.bloom[1] + 0.1); this.bloomLite.threshold = c.bloom[2]; } }
+    if (this.grade) { const g = c.grade, u = this.grade.uniforms; u.sat.value = g.sat; u.con.value = g.con; u.tint.value.set(...g.tint); u.vig.value = g.vig; u.grain.value = g.grain; u.sh.value.set(...(g.sh || [1, 1, 1])); u.hi.value.set(...(g.hi || [1, 1, 1])); }
     this._envFor.clear(); this._envKey = null;
     for (const m of this._surf) this._applyScanParams(m);
     this.save(); if (!quiet && this.onChange) this.onChange(`Look: ${c.name}`, c.blurb);
   },
   cycleLook() { const i = LOOK_ORDER.indexOf(this.id); this.set(LOOK_ORDER[(i + 1) % LOOK_ORDER.length]); },
   cycleTier() { const t = ['high', 'med', 'off']; this.setTier(t[(t.indexOf(this.tier) + 1) % 3]); this.autoTier = false; },
-  setTier(t) { this.tier = t; this.save(); if (this.onChange) this.onChange(`Effects: ${t === 'high' ? 'High (MSAA + bloom + grade)' : t === 'med' ? 'Medium (grade only)' : 'Off'}`); },
+  setTier(t) { this.tier = t; this.save(); if (this.onChange) this.onChange(`Effects: ${t === 'high' ? 'High (MSAA + bloom + grade)' : t === 'med' ? 'Medium (light bloom + grade)' : 'Off'}`); },
   toggleSource() { this.source = this.source === 'scan' ? 'proc' : 'scan'; for (const m of this._surf) this._dress(m); this.save(); if (this.onChange) this.onChange(`Materials: ${this.source === 'scan' ? 'scanned PBR (CC0)' : 'procedural'}`); },
 
   // ---------- textures ----------
@@ -170,7 +170,7 @@ export const Look = {
     const prev = mat.onBeforeCompile;
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      Object.assign(sh.uniforms, { uLgrime: U.grime, uLmacro: U.macro, uLdN: U.detailN, uLdR: U.detailR, uLrough: U.rough, uLwet: U.wet, uLdA: U.ldA });
+      Object.assign(sh.uniforms, { uLgrime: U.grime, uLmacro: U.macro, uLdN: U.detailN, uLdR: U.detailR, uLrough: U.rough, uLwet: U.wet, uLdA: U.ldA, uLao: U.ao });
       if (tri) { sh.uniforms.tLD = dtex; sh.uniforms.uLdS = { value: scale }; }
       const def = (tri ? '#define LOOK_TRI\n' : '') + (variant === 'ground' ? '#define LOOK_GROUND\n' : '') + (variant === 'uv' ? '#define LOOK_UV\n' : '');
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLWp; varying vec3 vLWn;')
@@ -182,7 +182,7 @@ export const Look = {
           vLWp = (modelMatrix * lwp).xyz; vLWn = normalize(mat3(modelMatrix) * lwn); }`);
       sh.fragmentShader = def + sh.fragmentShader.replace('#include <common>', `#include <common>
         varying vec3 vLWp; varying vec3 vLWn;
-        uniform float uLgrime, uLmacro, uLdN, uLdR, uLrough, uLwet, uLdA;
+        uniform float uLgrime, uLmacro, uLdN, uLdR, uLrough, uLwet, uLdA, uLao;
         #ifdef LOOK_TRI
         uniform sampler2D tLD; uniform float uLdS;
         #endif
@@ -198,7 +198,7 @@ export const Look = {
           pert = tx*b.x + ty*b.y + tz*b.z; return x*b.x + y*b.y + z*b.z; }
         #endif`)
         .replace('#include <map_fragment>', `#include <map_fragment>
-          vec3 lWn = normalize(vLWn); vec3 lPert = vec3(0.0); float lMask = 0.0, lGr = 0.0;
+          vec3 lWn = normalize(vLWn); vec3 lPert = vec3(0.0); float lMask = 0.0, lGr = 0.0, lAO = 1.0;
           { vec3 wp = vLWp;
             float mc = ln(wp*0.045)*0.55 + ln(wp*0.19)*0.3 + ln(wp*0.9)*0.15;
             diffuseColor.rgb *= 1.0 + (mc-0.5)*uLmacro*1.6;
@@ -219,10 +219,13 @@ export const Look = {
               float dirt = low*(0.45 + 0.55*ln(wp*2.7)) + smoothstep(0.55,0.95,streak)*0.55*vert*smoothstep(0.0,3.0,wp.y);
               diffuseColor.rgb *= 1.0 - clamp(dirt*uLgrime*0.55, 0.0, 0.8)*vert;
               lMask = low*uLgrime;
+              { float crease = 1.0 - smoothstep(0.0, 0.5, wp.y); lAO -= crease*vert*0.4 + smoothstep(0.25, 1.0, -lWn.y)*0.22; lAO = mix(1.0, clamp(lAO, 0.35, 1.0), clamp(uLao, 0.0, 1.5)); }
             #endif
             if (uLwet > 0.0) { float pud = smoothstep(0.44, 0.58, ln(vec3(wp.x*0.33, 0.0, wp.z*0.33))*0.7 + ln(wp*1.3)*0.3) * smoothstep(0.7, 0.96, lWn.y);
               diffuseColor.rgb *= 1.0 - pud*0.55*uLwet; if (pud > 0.0) lGr = -pud*uLwet; }
           }`)
+        .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+          reflectedLight.indirectDiffuse *= lAO; reflectedLight.indirectSpecular *= mix(1.0, lAO, 0.6); reflectedLight.directDiffuse *= mix(1.0, lAO, 0.35);`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           { float rr = roughnessFactor + uLrough;
             #ifdef LOOK_TRI
@@ -303,19 +306,22 @@ export const Look = {
     this.composer = new EffectComposer(r, rt); this.composer.setPixelRatio(1); this.composer.setSize(size.x, size.y);
     this.rp = new RenderPass(null, null); this.composer.addPass(this.rp);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.2, 0.6, 0.9); this.composer.addPass(this.bloom);
+    this.bloomLite = new UnrealBloomPass(new THREE.Vector2(size.x >> 2, size.y >> 2), 0.2, 0.6, 0.9); const bs = this.bloomLite.setSize.bind(this.bloomLite); this.bloomLite.setSize = (w, h) => bs(w >> 2, h >> 2); this.composer.addPass(this.bloomLite);   // fx med: quarter-res bloom so emissives still glow cheaply
     this.composer.addPass(new OutputPass());
     this.grade = new ShaderPass({
-      uniforms: { tDiffuse: { value: null }, sat: { value: 1 }, con: { value: 1 }, tint: { value: new THREE.Vector3(1, 1, 1) }, vig: { value: 0.2 }, grain: { value: 0.03 }, t: { value: 0 } },
+      uniforms: { tDiffuse: { value: null }, sat: { value: 1 }, con: { value: 1 }, tint: { value: new THREE.Vector3(1, 1, 1) }, vig: { value: 0.2 }, grain: { value: 0.03 }, t: { value: 0 }, sh: { value: new THREE.Vector3(1, 1, 1) }, hi: { value: new THREE.Vector3(1, 1, 1) } },
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-      fragmentShader: `uniform sampler2D tDiffuse; uniform float sat, con, vig, grain, t; uniform vec3 tint; varying vec2 vUv;
+      fragmentShader: `uniform sampler2D tDiffuse; uniform float sat, con, vig, grain, t; uniform vec3 tint, sh, hi; varying vec2 vUv;
         float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)))*43758.5453); }
         void main(){ vec3 c = texture2D(tDiffuse, vUv).rgb; float l = dot(c, vec3(0.2126,0.7152,0.0722));
           c = mix(vec3(l), c, sat); c = (c - 0.5)*con + 0.5; c *= tint;
+          l = dot(c, vec3(0.2126,0.7152,0.0722)); c = mix(c, c*sh, (1.0 - smoothstep(0.0, 0.5, l))*0.6); c = mix(c, c*hi, smoothstep(0.45, 1.0, l)*0.5);
+          c = mix(c, c*c*(3.0 - 2.0*c), 0.18);   // gentle S-curve
           vec2 q = vUv - 0.5; c *= 1.0 - vig*smoothstep(0.25, 0.85, dot(q,q)*2.0);
           c += (h(vUv*vec2(1731.0,1093.0) + t) - 0.5)*grain; gl_FragColor = vec4(max(c, 0.0), 1.0); }` });
     this.composer.addPass(this.grade); this.set(this.id, true);
   },
-  resize(w, h) { if (!this.composer) return; const s = this.renderer.getDrawingBufferSize(new THREE.Vector2()); this.composer.setSize(s.x, s.y); this.bloom.resolution.set(s.x, s.y); },
+  resize(w, h) { if (!this.composer) return; const s = this.renderer.getDrawingBufferSize(new THREE.Vector2()); this.composer.setSize(s.x, s.y); this.bloom.resolution.set(s.x, s.y); this.bloomLite.resolution.set(s.x >> 2, s.y >> 2); },
 
   render(scene, camera, dt = 0.016) {
     const r = this.renderer; this._frame++; for (const h of this.hooks) h(dt);
@@ -325,7 +331,7 @@ export const Look = {
     // auto-drop quality if the machine can't hold ~40 fps (never when the user pinned a tier or under automation)
     if (this.autoTier) { this._ema = (this._ema ?? 0.016) * 0.97 + Math.min(dt, 0.1) * 0.03; if (this._ema > 0.026 && this.tier !== 'off') { this._slow = (this._slow || 0) + 1; if (this._slow > 90) { this._slow = 0; this._ema = 0.016; this.setTier(this.tier === 'high' ? 'med' : 'off'); } } else this._slow = 0; }
     if (this.tier === 'off' || !this.composer) { r.render(scene, camera); return; }
-    this.rp.scene = scene; this.rp.camera = camera; this.bloom.enabled = this.tier === 'high'; this.grade.uniforms.t.value = (this._frame % 97) * 0.37;
+    this.rp.scene = scene; this.rp.camera = camera; this.bloom.enabled = this.tier === 'high'; this.bloomLite.enabled = this.tier === 'med'; this.grade.uniforms.t.value = (this._frame % 97) * 0.37;
     this.composer.render(dt);
   },
 };

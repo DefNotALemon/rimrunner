@@ -218,7 +218,7 @@ export function screenTexture(kind = 'terminal', variant = 0) {   // shared per 
   const st = { r }, f = SCREENS[kind], draw = (x, t, s, dt) => f(x, t, s, dt, tn);
   const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4; screens[key] = { ctx: cx, tex, st, draw, phase: variant * 3.1 }; draw(cx, 0, st, 0.1); tex.needsUpdate = true; return tex;
 }
-export function screenMat(kind = 'terminal', variant = 0, intensity = 1.5) {   // plane/box face material: dark glass that emits the animated canvas
+export function screenMat(kind = 'terminal', variant = 0, intensity = 2.0) {   // plane/box face material: dark glass that emits the animated canvas
   const key = `screen|${kind}|${variant}|${intensity}`; if (matCache[key]) return matCache[key]; const t = screenTexture(kind, variant);
   const m = new THREE.MeshStandardMaterial({ color: 0x050607, map: null, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: intensity, roughness: 0.18, metalness: 0.1 }); m.userData.look = { skip: true }; return matCache[key] = m;
 }
