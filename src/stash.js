@@ -104,7 +104,8 @@ export class Stash {
     if (this.msgT > 0) { this.msgT -= dt; if (this.msg) { this.msg.style.opacity = Math.min(1, this.msgT * 3); if (this.msgT <= 0) this.msg.style.display = 'none'; } }
     this.hoverItem = null; this.ring.visible = false; this.prompt = '';
     const S = ctx && ctx.surf; this.lod(dt, player, S);
-    const c = this.cur; if (!c) { this.hoverDisplays(player, ctx, S); this.tagShow(); return; }
+    this.hoverPick = null;
+    const c = this.cur; if (!c) { this.hoverDisplays(player, ctx, S); if (!this.hoverItem) this.hoverPickups(player, ctx, S); this.tagShow(); return; }
     if (Math.hypot(player.pos.x - c.x, player.pos.z - c.z) > REACH) { this.close(); return; }
     for (const it of c.itemObjs) { if (it.shake > 0) { it.shake -= dt; const k = Math.sin(it.shake * 60) * 0.015 * Math.min(1, it.shake * 4); it.group.position.x = it.group.userData.base.x + k; } else it.group.position.x = it.group.userData.base.x; }
     if (c.rig.t < 0.9) { this.tagShow(); return; }
@@ -142,13 +143,32 @@ export class Stash {
     for (const o of d.itemObjs) { if (o.shake > 0) { o.shake -= 1 / 60; o.group.position.x = o.group.userData.base.x + Math.sin(o.shake * 60) * 0.015 * Math.min(1, o.shake * 4); } else if (o.group.userData.base) o.group.position.x = o.group.userData.base.x; }
     if (In.pressed.fire) { this.grab(d, it, !!In.down.sprint); In.pressed.fire = false; In.down.fire = false; }
   }
+  // ---- loose pickups (dropped guns/items lying on the ground, S.pickups): aim at one and pull the trigger to pick it up ----
+  hoverPickups(player, ctx, S) {
+    if (!S || !S.pickups || !S.pickups.length || !ctx || !ctx.pickup || ctx.active === false || ctx.wheel || In.down.aim || player.dead) return;
+    const live = new Set(S.interactables || []); S.pickups = S.pickups.filter(p => { if (live.has(p)) return true; if (p.data && p.data.hit) p.data.hit.parent && p.data.hit.parent.remove(p.data.hit); return false; });
+    const near = S.pickups.filter(p => Math.hypot(player.pos.x - p.pos.x, player.pos.z - p.pos.z) < REACH + 0.5 && Math.abs(p.pos.y - player.pos.y) < 3);
+    if (!near.length) return;
+    for (const p of near) if (!p.data.hit) {   // a generous invisible box round the mesh, so small things on the floor are easy to aim at
+      const m = p.data.m; m.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(m, true), sz = b.getSize(V()), cen = b.getCenter(V());
+      const hit = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.3, sz.x + 0.1), Math.max(0.25, sz.y + 0.1), Math.max(0.3, sz.z + 0.1)), HIT);
+      hit.position.copy(cen); if (m.parent) m.parent.worldToLocal(hit.position); (m.parent || S.root).add(hit); hit.updateMatrixWorld(true);
+      const e = p.data.g ? p.data.g : { id: p.data.h.id, n: p.data.h.n }; p.data.hit = hit; p.data.ho = { group: hit, hit, entry: e, shake: 0, pick: p };
+    }
+    const cp = this.camera.position, cd = Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z);
+    this.ray.setFromCamera({ x: 0, y: 0 }, this.camera); this.ray.far = REACH + cd; const hits = this.ray.intersectObjects(near.map(p => p.data.hit), false); this.ray.far = REACH + 1;
+    if (!hits.length || Math.hypot(hits[0].point.x - player.pos.x, hits[0].point.z - player.pos.z) > REACH) return;
+    const p = near.find(q => q.data.hit === hits[0].object), ip = p.data.hit.getWorldPosition(V()); if (blocked(S, cp, ip)) return;
+    this.hover(p.data.ho); this.hoverPick = p;
+    if (In.pressed.fire) { In.pressed.fire = false; In.down.fire = false; ctx.pickup(p); if (!(S.interactables || []).includes(p)) { this.hoverItem = null; this.hoverPick = null; this.ring.visible = false; p.data.hit.parent && p.data.hit.parent.remove(p.data.hit); } }
+  }
   // hover tag under the crosshair: name, what it is, how to take it
   tagShow() {
     const it = this.hoverItem;
     if (!this.tag) { if (!it || typeof document === 'undefined' || !document.body) return; const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:50%;top:56%;transform:translateX(-50%);max-width:340px;padding:6px 12px;border-radius:6px;background:rgba(8,12,18,.62);color:#e8f4ff;font:600 15px/1.25 system-ui,sans-serif;text-align:center;pointer-events:none;z-index:29;display:none'; document.body.appendChild(d); this.tag = d; }
     if (!it) { if (this.tagOn) { this.tag.style.display = 'none'; this.tagOn = false; } return; }
-    const key = it.entry.id + ':' + (it.entry.n || 1) + (this.cur ? 'c' : 'd');
-    if (this.tagKey !== key) { this.tagKey = key; this.tag.innerHTML = `${this.nameOf(it.entry)}<div style="font:400 13px system-ui;color:#b8c8d8;margin-top:2px">${describe(it.entry.id)}</div>` + (this.cur ? '' : `<div style="font:500 12px system-ui;color:#8fe8ff;margin-top:3px">${In.label('fire')} grab · ${In.label('sprint')}+${In.label('fire')} one</div>`); }
+    const key = it.entry.id + ':' + (it.entry.n || 1) + (this.cur ? 'c' : it.pick ? 'p' : 'd');
+    if (this.tagKey !== key) { this.tagKey = key; this.tag.innerHTML = `${this.nameOf(it.entry)}<div style="font:400 13px system-ui;color:#b8c8d8;margin-top:2px">${describe(it.entry.id)}</div>` + (this.cur ? '' : `<div style="font:500 12px system-ui;color:#8fe8ff;margin-top:3px">${it.pick ? `${In.label('fire')} pick up` : `${In.label('fire')} grab · ${In.label('sprint')}+${In.label('fire')} one`}</div>`); }
     if (!this.tagOn) { this.tag.style.display = 'block'; this.tagOn = true; }
   }
 

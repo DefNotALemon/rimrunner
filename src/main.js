@@ -332,7 +332,7 @@ function frame(now) {
     } else if (mode === 'foot' || mode === 'jail' || mode === 'extract' || mode === 'station') {
       const S = mode === 'jail' ? jail : mode === 'extract' ? xs : mode === 'station' ? MW.stn : surf; const xm = mode === 'extract';
       const act2 = active && !(xm && xs.stunT > 0);
-      const ctx = { wheel: wheel.open, active: act2, npcs: xm ? xs.enemies : S.npcs, surf: S, hitNPC: (n, d, h) => xm ? xs.hitEnemy(n, d, h) : social.hit(n, d, h, player, S, ui), onMined: () => {} };
+      const ctx = { wheel: wheel.open, active: act2, npcs: xm ? xs.enemies : S.npcs, surf: S, hitNPC: (n, d, h) => xm ? xs.hitEnemy(n, d, h) : social.hit(n, d, h, player, S, ui), onMined: () => {}, pickup: it => doInteract({ it }) };
       if (mode === 'station') { ctx.npcs = S.enemies; ctx.hitNPC = (n, d, h) => S.hitEnemy(n, d, h); }
       stash.attach(S.scene); stash.update(dt, player, ctx);
       player.update(dt, ctx);
@@ -352,7 +352,7 @@ function frame(now) {
         const nx = nearestInteract; void nx;
         // after stepping near the ship with E: board
       }
-      let prompt = pack.isOpen ? (pack.hover ? '' : '') + `<small><kbd>${In.label('interact')}</kbd> take / place · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('interact')}</kbd> whole stack · <kbd>${In.label('reload')}</kbd> drop · <kbd>${In.label('holster')}</kbd> stow · <kbd>${In.label('pack')}</kbd> close</small>` : ''; if (stash.active && stash.prompt) prompt = stash.prompt; if (t && !ui.focusNpc && !(stash.active && stash.hoverItem)) prompt = t.choke ? `<kbd>${In.label('interact')}</kbd> Choke out (they can't see you)` : t.strip ? `<kbd>${In.label('interact')}</kbd> Take their clothes (${esc(t.strip.prof.outfit.name)})` : t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
+      let prompt = pack.isOpen ? (pack.hover ? '' : '') + `<small><kbd>${In.label('interact')}</kbd> take / place · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('interact')}</kbd> whole stack · <kbd>${In.label('reload')}</kbd> drop · <kbd>${In.label('holster')}</kbd> stow · <kbd>${In.label('pack')}</kbd> close</small>` : ''; if (stash.active && stash.prompt) prompt = stash.prompt; if (t && !ui.focusNpc && !(stash.active && stash.hoverItem) && !(stash.hoverPick && t.it === stash.hoverPick)) prompt = t.choke ? `<kbd>${In.label('interact')}</kbd> Choke out (they can't see you)` : t.strip ? `<kbd>${In.label('interact')}</kbd> Take their clothes (${esc(t.strip.prof.outfit.name)})` : t.npc ? `<kbd>${In.label('interact')}</kbd> Talk to ${t.npc.prof.met ? esc(t.npc.prof.name) : 'stranger'}` : `<kbd>${In.label('interact')}</kbd> ${esc(t.it.label)}`;
       if (mode === 'jail') prompt = prompt || `<small>Sentence: ${Math.ceil(jail.timeLeft)}s</small>`; if (mode === 'jail' && jail.maxAlert > 0.05) prompt += ` <span class="alert">GUARD SUSPICIOUS ${(jail.maxAlert * 100) | 0}%</span>`;
       ui.update(dt, { mode: mode === 'jail' || xm || mode === 'station' ? 'foot' : mode, player, space, surf: xm || mode === 'station' ? S : mode === 'jail' ? { ...jail, planet: { ...jail.planet, name: 'Rimway Holding', kind: 'facility' }, air: 1 } : surf, prompt, camera });
       if (xm) X.updateHud(player);
