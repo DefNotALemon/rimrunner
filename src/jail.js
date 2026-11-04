@@ -12,7 +12,7 @@ export class Jail extends Surface {
   timeOfDay() { this.scene.background = new THREE.Color(0x050608); this.scene.fog.color.set(0x050608); this.scene.fog.near = 5; this.scene.fog.far = 70; }
   enter(info, sys, planet) {
     this.info = info; this.sys = sys; this.planet = { ...planet, settled: false, kind: 'barren', temp: 0.5, air: 1, g: 1, i: planet.i }; this.kind = 'barren';
-    this.K = { res: [], sky: 0 }; this.air = 1; this.gravity = 1; this.root.clear(); this.colliders = []; this.interactables = []; this.npcs = []; this.nodes = []; this.pickups = []; this.buildings = [];
+    this.K = { res: [], sky: 0 }; this.air = 1; this.gravity = 1; this.root.clear(); this.colliders = []; this.interactables = []; this.npcs = []; this.nodes = []; this.pickups = []; this.buildings = []; this.ceilH = 3.4;   // the cell block's ceiling: the third-person camera slides under it
     this.scene.remove(this.sky.mesh); this.scene.fog = new THREE.Fog(0x050608, 5, 70); this.sun.intensity = 0; this.hemi.intensity = 0.55; this.hemi.color.set(0x8a95a8); this.hemi.groundColor.set(0x303338);
     this.padPos = V(1000, 0, 1000); this.flatR = 9999; this.lamps = [];
     const concrete = std(0x6e7279), dark = std(0x2b2e33), floorM = std(0x45484d);

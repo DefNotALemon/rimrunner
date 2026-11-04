@@ -164,21 +164,40 @@ export class Player {
     }
     this.focusTarget = best;
   }
-  // how far (0..1) the camera can sit along pivot->want before a wall/prop is in the way
+  // how far (0..1) the lens can sit along pivot->want before a wall, prop, ceiling or hillside is in the way (Skyrim-style: the
+  // camera slides in toward you instead of passing through). Exact 3D slab test per collider with a 0.3 m skin so the near plane
+  // never touches the wall; when the pivot is already inside that skin (backed against a wall) the bare box is used with the skin
+  // taken off along the ray, so the wall behind you still pulls the camera in instead of being skipped. No minimum: with no room
+  // at all the lens reaches the head and updateCamera eases into first person.
   fitRoom(from, to) {
     const d = to.clone().sub(from), len = d.length(); if (len < 1e-4) return 1;
-    let best = 1;
-    for (const c of this.surf.colliders) {
-      if (c.roof || c.id === 'ship') continue;
-      const top = c.maxy ?? 99; if (top < from.y - 0.2 && top < to.y - 0.2) continue;
-      const m = 0.3, x0 = c.minx - m, x1 = c.maxx + m, z0 = c.minz - m, z1 = c.maxz + m;
+    const s = this.surf, m = 0.3; let best = 1;
+    const enter = (c, k) => {   // entry fraction of from->to into collider c grown by k (0 = starts inside, 2 = miss)
       let t0 = 0, t1 = 1;
-      for (const [o, dd, lo, hi] of [[from.x, d.x, x0, x1], [from.z, d.z, z0, z1]]) {
-        if (Math.abs(dd) < 1e-6) { if (o < lo || o > hi) { t0 = 2; break; } } else { let a = (lo - o) / dd, b = (hi - o) / dd; if (a > b) { const t = a; a = b; b = t; } t0 = Math.max(t0, a); t1 = Math.min(t1, b); }
+      for (const [o, dd, lo, hi] of [[from.x, d.x, c.minx - k, c.maxx + k], [from.z, d.z, c.minz - k, c.maxz + k], [from.y, d.y, -1e9, (c.maxy ?? 99) + k]]) {
+        if (Math.abs(dd) < 1e-6) { if (o < lo || o > hi) return 2; } else { let a = (lo - o) / dd, b = (hi - o) / dd; if (a > b) { const t = a; a = b; b = t; } if (a > t0) t0 = a; if (b < t1) t1 = b; }
       }
-      if (t0 <= t1 && t0 > 0 && t0 < best) best = t0;
+      return t0 <= t1 ? t0 : 2;
+    };
+    for (const c of s.colliders) {
+      if (c.roof) continue;
+      let t = enter(c, m);
+      if (t === 0) { t = enter(c, 0); if (t === 0 || t > 1) continue; t = Math.max(0, t - m / len); }   // pivot inside the skin / inside the box (ship footprint)
+      if (t < best) best = t;
     }
-    return Math.max(0.12, best);
+    // (ceilings are handled by updateCamera sliding the lens down under them, which keeps the pull-back when you look down)
+    // terrain behind you (hillsides, rocks baked into the height field)
+    if (s.heightAt) for (let t = 0.1; t < best; t += 0.35 / len) { const x = from.x + d.x * t, z = from.z + d.z * t; if (from.y + d.y * t < s.heightAt(x, z) + 0.2) { best = Math.max(0, t - 0.25 / len); break; } }
+    return Math.max(0, best);
+  }
+  // world y of the ceiling over (x, z) in the current space, Infinity outdoors
+  ceilAt(x, z) {
+    const s = this.surf;
+    const bd = s.buildings?.find(b => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1);
+    if (bd) return this.pos.y + (bd.h || 3.2);
+    const sh = s.ship;
+    if (sh?.own) { const i = Math.floor(x), j = Math.floor(z - sh.zlo); if (i >= 0 && j >= 0 && i < sh.nx && j < sh.nz) { const o = sh.own[j * sh.nx + i]; return o >= 0 ? (sh.owners[o].H || sh.H) : sh.H; } return sh.H; }
+    return s.ceilH ?? Infinity;
   }
   // where a shot fired from the body lands when the lens is somewhere else; also drives the sliding crosshair
   updateAimPoint(dt) {
@@ -343,30 +362,33 @@ export class Player {
     const tp = Math.max(this.tpU, this.idleCam);
     this.tp = tp;
     if (tp > 0.01) {
-      let tpPos, tpQuat;
-      if (this.idleCam > 0.5 && !this.thirdPerson) {
+      // both views (the V orbit you steer and the idle cinematic circle) share one collision fit: the lens slides in along
+      // pivot->lens until nothing is between you and it (fast in, slow back out), slides down under ceilings, and when there is
+      // no room left at all (back flat against a wall) it eases into first person instead of ending up inside your head.
+      const idle = this.idleCam > 0.5 && !this.thirdPerson;
+      let pivot, full;
+      if (idle) {
         this.orbit += dt * 0.12 * this.idleCam;
         const base = this.yaw + this.orbit + Math.PI * 0.2 * this.idleCam;
-        const pivot = V(this.pos.x, this.pos.y + 1.5, this.pos.z);
+        pivot = V(this.pos.x, this.pos.y + 1.5, this.pos.z);
         const dir = V(Math.sin(base), 0.0, Math.cos(base)).multiplyScalar(3.6); dir.y = 0.35 + (this.pitch * -0.8) + 0.2;
-        tpPos = pivot.clone().add(dir);
-        tpQuat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(tpPos, pivot, V(0, 1, 0)));
+        full = pivot.clone().add(dir);
       } else {
         const ac = this.aimC, f = this.camForward();
-        const pivot = V(this.pos.x, e.y + 0.05, this.pos.z);
+        pivot = V(this.pos.x, e.y + 0.05, this.pos.z);
         const right = V(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
         const dist = lerp(3.1, 1.25, ac), shoulder = lerp(0.3, 0.55, ac), up = lerp(0.3, 0.12, ac);
-        const full = pivot.clone().addScaledVector(right, shoulder).addScaledVector(f, -dist); full.y += up;
-        // fit to the room: shorten the pull-back until nothing is between the pivot and the lens
-        const room = this.fitRoom(pivot, full);
-        this.camFit = this.camFit ?? 1; this.camFit = damp(this.camFit, room, room < this.camFit ? 30 : 3.5, dt);
-        if (this.camFit > room) this.camFit = room;
-        tpPos = pivot.clone().lerp(full, this.camFit);
-        const bd = this.surf.buildings?.find(b => this.pos.x > b.x0 && this.pos.x < b.x1 && this.pos.z > b.z0 && this.pos.z < b.z1);
-        if (bd) tpPos.y = Math.min(tpPos.y, this.pos.y + (bd.h || 3.2) - 0.25);
-        tpQuat = q;
+        full = pivot.clone().addScaledVector(right, shoulder).addScaledVector(f, -dist); full.y += up;
       }
-      cam.position.copy(e).lerp(tpPos, tp); cam.quaternion.copy(q).slerp(tpQuat, tp);
+      const room = this.fitRoom(pivot, full);
+      this.camFit = this.camFit ?? 1; this.camFit = damp(this.camFit, room, room < this.camFit ? 30 : 3.5, dt);
+      if (this.camFit > room) this.camFit = room;
+      const tpPos = pivot.clone().lerp(full, this.camFit);
+      tpPos.y = Math.min(tpPos.y, Math.min(this.ceilAt(this.pos.x, this.pos.z), this.ceilAt(tpPos.x, tpPos.z)) - 0.25);
+      const near = tpPos.distanceTo(pivot), sq = clamp((near - 0.25) / 0.4, 0, 1), k = tp * sq * sq * (3 - 2 * sq);
+      this.tp = k;   // body vs. viewmodel follows the squeezed blend
+      const tpQuat = idle && near > 0.05 ? new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(tpPos, pivot, V(0, 1, 0))) : q;
+      cam.position.copy(e).lerp(tpPos, k); cam.quaternion.copy(q).slerp(tpQuat, k);
     } else { cam.position.copy(e); cam.quaternion.copy(q); this.camFit = 1; }
     // ground clip
     const gy = s.heightAt(cam.position.x, cam.position.z) + 0.15; if (cam.position.y < gy) cam.position.y = gy;
