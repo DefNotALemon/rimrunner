@@ -1,5 +1,34 @@
 # Rimrunner materials and lighting
 
+## Material kit API (`src/matlib.js`) for wall segments, ships and interiors
+
+One import gives every segment the same palette, the same texel density (**256 px per metre**; 2 m tiles are 512 px) and the same lighting treatment, so neighbouring pieces match. All calls are cached; textures are built lazily on first use (~50-500 ms per style) and shared. Materials go through `Look.dress`, so F6 looks, F7 and F8 keep working and the world-space grime/macro shader applies.
+
+```js
+import * as M from './matlib.js';          // or: import { Matlib } from './matlib.js'
+```
+
+| Call | What you get |
+|---|---|
+| `M.panelMat(style, color?)` | PBR material (albedo + normal + roughness + metal + AO). Styles: `panel` (painted 2x2 panels, seams, bolts, scratches), `plate` (heavy riveted plate), `ribbed` (corrugation), `steel` (brushed), `diamond` (tread plate), `concrete` (form-tie holes), `tile` (glazed, dark grout), `carpet`, `wood` (planks), `rubber` (coin studs), `hazard` (yellow/black chipped stripes), `rust` (derelict). `color` tints the albedo (default per style; `hazard`/`rust` default to white = own colours). `M.styleNames()` lists them. |
+| `M.uvMeters(geo, matrix?, unit=1)` | Rewrites a geometry's UVs to **world metres** (box projection by dominant normal). **Call this on every geometry that uses `panelMat`.** Pass the mesh's world matrix (or a translation) so the pattern continues across neighbouring segments; skip the matrix for a pattern relative to the piece. A 1 m style repeats every 1 m, 2 m styles every 2 m. |
+| `M.emissiveMat(color, mode, {intensity, phase}?)` | Glowing LED/strip/lamp. Modes `led` `strip` `pulse` `blink` `warn` `flicker` `lamp`. One shared material per (colour, mode, phase) animated by the shared loop; boosted ~35% at night; blooms at fx med/high. Use `M.PAL.led.cyan/green/amber/red/white/blue/magenta`. Pass different `phase` to desynchronise blinkers. |
+| `M.screenMat(kind, variant=0, intensity=1.5)` / `M.screenTexture(kind, variant)` | Dark glass that emits an animated canvas. Kinds (`M.SCREENS`): `terminal` (scrolling hex, no readable text), `graph`, `radar`, `bars`, `status`, `wave`, `static`, `idle`. `variant` 0-3 = green / cyan / amber / red tint and its own random state. Canvases are 256x160 (aspect 1.6), shared per (kind, variant), redrawn at ~6 Hz in one loop (2 Hz at fx off). Put it on a plane inset into a frame. |
+| `M.decalMat(name, {opacity, color, emissive}?)` / `M.decalMesh(name, w, h, o?)` / `M.decalTextures()` | Alpha overlays: `streak` (grime drips), `stripe` (hazard band, 4:1), `vent`, `fan`, `arrow`, `warn` (triangle), `scorch`, `oil`, `plate` (barcode data plate, 2:1), `scratches`, `grime`. Polygon-offset, no depth write: place 2-3 mm off the wall facing +z (planes) and rotate as needed. |
+| `M.decalNumber(text, {color}?)` | Stencil number decal (`'04-B'`); `mat.userData.aspect` = width/height of the quad to use. Digits and codes only, never room names. |
+| `M.pipeMat(kind, color?)` + `M.pipeGeo(r, len)` | Pipe with flange + bolts every metre and a weld ring. Kinds `steel`, `painted` (default safety orange), `copper`, `insulated`. Pipe axis is +Y; rotate it. |
+| `M.wireMat(color)` + `M.cableGeo(a, b, {sag, radius, seg}?)` | Ribbed rubber cable and a sagging tube between two `Vector3`s. |
+| `M.glassMat(tint, opacity)` | Clear glass, low roughness, double sided, picks up the sky env. |
+| `M.PAL` | Shared palette: `hull hullDark trim ink white cream accent safety teal blue green red rust copper brass carpet wood concrete tile rubber` + `led.*`. Build walls from `hull`/`hullDark`/`trim`/`white`, spend `accent`/`safety`/`led.*` sparingly for life. |
+
+Typical wall: `const geo = M.uvMeters(new THREE.BoxGeometry(w, h, d), mesh.matrixWorld); new THREE.Mesh(geo, M.panelMat('panel', M.PAL.hull))`, then a vent decal, a few `emissiveMat` LEDs, a `screenMat('terminal', 1)` in a `plate` frame, `pipeGeo` runs along the base. Anything built from `emissiveMat/screenMat/decal*` must NOT be merged into a batched static mesh with different materials unless the material instance is kept (batch.js merges by material signature: shared materials stay shared, so animation still works; do not clone them).
+
+Look/lighting additions that apply automatically: cheap contact darkening (wall/floor creases, under overhangs, ceiling occlusion), split-toned colour grade, soft vignette, bloom on emissives at fx **med** (half-res) and **high** (full), night boost on LEDs.
+
+Lab: `lab.html?cam=Kit` (and `Kit close`, `Kit panels`) shows every style, LED mode, screen, decal, pipe, cable and glass.
+
+---
+
 Open `lab.html` (same server, `http://localhost:8765/lab.html`) to flip every option below side by side. In the game: **F6** cycles the look, **F7** the effects tier, **F8** the material source. Or use `?look=noir&fx=high&mat=scan` in the URL. Choices persist in localStorage.
 
 ## What was wrong

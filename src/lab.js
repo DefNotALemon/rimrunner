@@ -2,6 +2,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { Look, LOOKS, LOOK_ORDER } from './look.js';
 import { surfMat, boxUV, tex } from './textures.js';
+import * as ML from './matlib.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -30,6 +31,23 @@ KINDS.forEach(([k, col], i) => {
   const m = new THREE.Mesh(geo, surfMat(k, col)); m.position.set(x, h / 2, -2); m.castShadow = m.receiveShadow = true; scene.add(m);
   const lb = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.35), new THREE.MeshBasicMaterial({ map: cvs(k), transparent: true })); lb.position.set(x, 0.2, -1.78); scene.add(lb);
 });
+
+// matlib kit (cam 'Kit'): every panel style, LED modes, screens, decals, pipes, cables, glass
+{
+  const names = ML.styleNames();
+  names.forEach((n, i) => { const w = 1.5, h = 2, d = 0.3, geo = ML.uvMeters(new THREE.BoxGeometry(w, h, d), new THREE.Matrix4().makeTranslation((i - 6) * 1.7, h / 2, -12)); const m = new THREE.Mesh(geo, ML.panelMat(n)); m.position.set((i - 6) * 1.7, h / 2, -12); m.castShadow = m.receiveShadow = true; scene.add(m);
+    const lb = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.3), new THREE.MeshBasicMaterial({ map: cvs(n), transparent: true })); lb.position.set((i - 6) * 1.7, 0.18, -11.83); scene.add(lb); });
+  const row = new THREE.Group(); row.position.z = -10; scene.add(row); let x = -10;
+  const box = (mat, w, h, d, px, py) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(px, py, 0); row.add(m); return m; };
+  for (const mode of ['led', 'strip', 'pulse', 'blink', 'warn', 'flicker']) { box(ML.emissiveMat(ML.PAL.led.cyan, mode), 0.5, 0.18, 0.18, x, 0.5); box(ML.emissiveMat(ML.PAL.led.amber, mode), 0.5, 0.18, 0.18, x, 0.2); x += 0.7; }
+  x += 0.4; for (const k of Object.keys(ML.SCREENS)) { const f = box(ML.panelMat('plate', ML.PAL.trim), 1.0, 0.8, 0.08, x, 0.8); const sc = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.56), ML.screenMat(k, Object.keys(ML.SCREENS).indexOf(k))); sc.position.set(x, 0.8, 0.045); row.add(sc); x += 1.1; }
+  x += 0.3; const dn = Object.keys(ML.decalTextures()); const wallM = ML.panelMat('panel'); for (const k of dn) { const wall = box(wallM, 0.8, 0.8, 0.05, x, 0.6); wall.geometry = ML.uvMeters(new THREE.BoxGeometry(0.8, 0.8, 0.05), new THREE.Matrix4().makeTranslation(x, 0.6, -10)); const d = ML.decalMesh(k, k === 'stripe' || k === 'plate' ? 0.8 : 0.7, k === 'stripe' ? 0.2 : k === 'plate' ? 0.4 : 0.7); d.position.set(x, 0.6, 0.03); row.add(d); x += 0.9; }
+  const dm = ML.decalNumber('04-B'); const dd = new THREE.Mesh(new THREE.PlaneGeometry(0.8 * dm.userData.aspect / 2, 0.4), dm); dd.position.set(x, 0.6, 0.03); row.add(dd); box(wallM, 0.9, 0.9, 0.05, x, 0.6).position.z = 0; x += 1.2;
+  for (const [k, c] of [['steel'], ['painted'], ['copper'], ['insulated']]) { const p = new THREE.Mesh(ML.pipeGeo(0.07, 1.4), ML.pipeMat(k)); p.position.set(x, 0.7, 0.2); row.add(p); x += 0.3; }
+  for (const c of [0x1c1e22, PAL_C(0xb5382d), PAL_C(0xe2b422)]) { const cb = new THREE.Mesh(ML.cableGeo(new THREE.Vector3(x, 1.4, 0.2), new THREE.Vector3(x + 1.2, 1.4, 0.2), { radius: 0.02, sag: 0.25 }), ML.wireMat(c)); row.add(cb); x += 0.0; }
+  const gl = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.2, 0.04), ML.glassMat()); gl.position.set(x + 1.6, 0.7, 0.2); row.add(gl);
+}
+function PAL_C(c) { return c; }
 // material balls: polished / brushed / painted / rough / wet-ish dielectric
 const ball = (x, o) => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.7, 48, 32), new THREE.MeshStandardMaterial(o)); m.position.set(x, 0.7, 2.6); m.castShadow = m.receiveShadow = true; scene.add(m); };
 ball(-6, { color: 0xdde2ea, metalness: 1, roughness: 0.06 }); ball(-4.2, { color: 0xc8ccd2, metalness: 1, roughness: 0.32 }); ball(-2.4, { color: 0xb8863a, metalness: 1, roughness: 0.2 }); ball(-0.6, { color: 0x2a5a8a, metalness: 0.05, roughness: 0.25 });
@@ -52,14 +70,14 @@ function tod(v) {
   lamp.color.setHex(0xffe2b0).offsetHSL(Look.cfg.lampWarm * -0.03, 0, 0);
   sun.position.copy(sunDir).multiplyScalar(60); sun.target.position.set(0, 0, 4);
   document.getElementById('tl').textContent = L > 0.7 ? '· day' : L > 0.35 ? '· low sun' : L > 0.12 ? '· dusk' : '· night';
-  Look.skyEnv(scene, { L, sunDir, uSky: sky, uHor: hor, air: true, pal: [0.34, 0.4, 0.22], seed: 1, indoor: 0 }); Look.balance(hemi, sun, 0);
+  Look.day = L; Look.skyEnv(scene, { L, sunDir, uSky: sky, uHor: hor, air: true, pal: [0.34, 0.4, 0.22], seed: 1, indoor: 0 }); Look.balance(hemi, sun, 0);
 }
 // UI
 const $ = id => document.getElementById(id), mkBtn = (host, label, v, fn) => { const b = document.createElement('button'); b.textContent = label; b.dataset.v = v; b.onclick = () => fn(v); host.appendChild(b); return b; };
 LOOK_ORDER.forEach(id => mkBtn($('looks'), LOOKS[id].name, id, v => { Look.set(v); refresh(); }));
 for (const b of $('src').children) b.onclick = () => { if (Look.source !== b.dataset.v) Look.toggleSource(); refresh(); };
 for (const b of $('fx').children) b.onclick = () => { Look.setTier(b.dataset.v); refresh(); };
-const CAMS = { Walls: [[0, 5.5, 21], [0, 1.4, -2]], 'Close wall': [[-4.5, 1.6, 1.6], [-4.5, 1.5, -2]], Metals: [[0, 1.8, 8], [-0.5, 0.8, 2.6]], Ground: [[2, 1.4, 14], [0, 0, 6]], Overview: [[0, 9, 22], [0, 0.5, 2]], Lamp: [[-6, 2.2, 13], [-10, 2, 7]] };
+const CAMS = { Walls: [[0, 5.5, 21], [0, 1.4, -2]], 'Close wall': [[-4.5, 1.6, 1.6], [-4.5, 1.5, -2]], Metals: [[0, 1.8, 8], [-0.5, 0.8, 2.6]], Ground: [[2, 1.4, 14], [0, 0, 6]], Overview: [[0, 9, 22], [0, 0.5, 2]], Kit: [[0, 6.5, 5], [0, 1.2, -11]], 'Kit close': [[-8, 2.4, -6], [-8, 1.1, -11]], 'Kit panels': [[0, 3.2, -4.5], [0, 1.0, -12]], Lamp: [[-6, 2.2, 13], [-10, 2, 7]] };
 let orb = { th: 0, ph: 0, r: 0, c: new THREE.Vector3() }; function goCam(n) { const [p, t] = CAMS[n]; const v = new THREE.Vector3(...p).sub(new THREE.Vector3(...t)); orb.c.set(...t); orb.r = v.length(); orb.th = Math.atan2(v.x, v.z); orb.ph = Math.asin(v.y / orb.r); }
 for (const n in CAMS) mkBtn($('cams'), n, n, goCam); goCam('Walls');
 $('tod').oninput = e => { Look._envKey = null; tod(+e.target.value); }; Look.onChange = () => { refresh(); tod(+$('tod').value); };

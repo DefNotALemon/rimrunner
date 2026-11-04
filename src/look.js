@@ -58,7 +58,7 @@ const PROC = {
 };
 
 export const Look = {
-  id: 'frontier', cfg: LOOKS.frontier, source: 'scan', tier: 'high', renderer: null, onChange: null, indoor: 0, autoTier: true,
+  id: 'frontier', cfg: LOOKS.frontier, source: 'scan', tier: 'high', renderer: null, onChange: null, indoor: 0, autoTier: true, hooks: [], day: null,
   U: {   // shared uniforms: changing these retunes every patched material live, no recompiles
     grime: { value: 0.75 }, macro: { value: 0.3 }, detailN: { value: 1 }, detailR: { value: 0.5 }, rough: { value: 0 }, wet: { value: 0 }, ldA: { value: 0.35 },
   },
@@ -127,7 +127,7 @@ export const Look = {
       mat.color.setRGB(Math.min(2.4, r), Math.min(2.4, g), Math.min(2.4, b));
       mat.roughness = Math.min(1, K.rough); mat.metalness = K.metal; mat.aoMapIntensity = K.ao * c.ao; mat.normalScale.set(K.nrm * c.normal, K.nrm * c.normal);
     } else {
-      const P = PROC[u.kind] || { metal: 0 }; mat.roughness = 1; mat.metalness = P.metal > 0 ? 1 : 0; mat.aoMapIntensity = 0.9 * c.ao; mat.normalScale.set(c.normal, c.normal);
+      const P = PROC[u.kind] || u.proc.P || { metal: 0 }; mat.roughness = 1; mat.metalness = P.metal > 0 ? 1 : 0; mat.aoMapIntensity = 0.9 * c.ao; mat.normalScale.set(c.normal, c.normal);
     }
   },
 
@@ -289,7 +289,7 @@ export const Look = {
     if (sc.fog && sc.fog.isFogExp2) sc.fog.density = (air ? (airThick > 0.7 ? 0.00034 : 0.00022) : 0.00003) * this.cfg.fog;
   },
   surfaceFrame(surf, p) {
-    const L = surf.dayLevel ?? 1; let ind = 0;
+    const L = surf.dayLevel ?? 1; this.day = L; let ind = 0;
     for (const b of surf.buildings || []) if (Math.abs(p.x - b.x) < b.w / 2 - 0.15 && Math.abs(p.z - b.z) < b.d / 2 - 0.15 && p.y < 6) { ind = 1; break; }
     this.indoor += (ind - this.indoor) * 0.12; const u = surf.sky.mat.uniforms, air = surf.air > 0.3;
     this.skyEnv(surf.scene, { L, sunDir: surf.sunDir, uSky: u.uSky.value, uHor: u.uHor.value, air, pal: surf.K?.pal?.[0], seed: surf.planet?.seed, indoor: this.indoor });
@@ -318,7 +318,7 @@ export const Look = {
   resize(w, h) { if (!this.composer) return; const s = this.renderer.getDrawingBufferSize(new THREE.Vector2()); this.composer.setSize(s.x, s.y); this.bloom.resolution.set(s.x, s.y); },
 
   render(scene, camera, dt = 0.016) {
-    const r = this.renderer; this._frame++;
+    const r = this.renderer; this._frame++; for (const h of this.hooks) h(dt);
     const seen = this._scenesSeen.get(scene);
     if (!seen || this._frame % 150 === 0) { this.enhanceScene(scene); this._scenesSeen.set(scene, true); }
     if (!scene.environment) { scene.environment = this.dimEnv(); scene.environmentIntensity = scene.userData.envK ?? 0.5; }
