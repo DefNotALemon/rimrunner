@@ -368,7 +368,8 @@ export class Player {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.pitch + this.pitchOff + pitch + lp - this.recoil * 0.035, this.yaw, roll + lr, 'YXZ'));
     // third-person: V toggles an over-the-back orbit that eases in/out (no snap), tightens to an over-the-shoulder view when aiming,
     // and pulls in so it always fits the room (walls + ceiling) you are standing in.
-    this.tpU = damp(this.tpU ?? 0, this.thirdPerson ? 1 : 0, 5, dt);
+    // the open backpack is always seen through your own eyes: the orbit eases into first person while it is out and back after
+    this.tpU = damp(this.tpU ?? 0, this.thirdPerson && !this.packOpen && this.packT < 0.01 ? 1 : 0, this.packOpen ? 9 : 5, dt);
     this.aimC = damp(this.aimC ?? 0, G.hand ? this.aim : 0, 7, dt);
     const tp = Math.max(this.tpU, this.idleCam);
     this.tp = tp;
