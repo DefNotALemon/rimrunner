@@ -1,4 +1,8 @@
 // Input: keyboard+mouse, gamepad (brand-aware), touch. Auto-detects the active scheme live; prompts follow it.
+// DualSense: buttons work everywhere (raw Firefox layout remapped below); gyro aim (hold L2), rumble and
+// adaptive triggers come from dualsense.js over WebHID (Chrome/Edge). Other pads rumble via vibrationActuator.
+import { DS, initDualSense, offerDualSense, drainGyro, tickDualSense, haptic } from './dualsense.js';
+export { haptic };
 const KEYS = {
   jump: ['Space'], sprint: ['ShiftLeft', 'ShiftRight'], crouch: ['KeyC', 'ControlLeft'], interact: ['KeyE'], pack: ['Tab'],
   focus: ['KeyQ'], holster: ['KeyH'], reload: ['KeyR'], journal: ['KeyJ'], map: ['KeyM'], land: ['KeyL'], drive: ['KeyK'],
@@ -15,7 +19,7 @@ const TOUCHNAMES = { jump: 'JUMP', sprint: 'RUN', crouch: 'DUCK', interact: 'USE
 
 export const In = {
   scheme: 'kb', brand: 'xbox', down: {}, pressed: {}, move: { x: 0, y: 0 }, look: { x: 0, y: 0 }, locked: false,
-  listeners: [], _padPrev: {},
+  listeners: [], _padPrev: {}, _rawPrev: [], haptic,
   label(a) {
     if (this.scheme === 'touch') return TOUCHNAMES[a] || a;
     if (this.scheme === 'pad') { const i = PAD[a]; return i === undefined ? (a === 'back' ? PADNAMES[this.brand][1] : a) : PADNAMES[this.brand][i]; }
@@ -49,7 +53,8 @@ export function initInput(canvas) {
   addEventListener('contextmenu', e => e.preventDefault());
   addEventListener('mousemove', e => { if (document.pointerLockElement) { In.setScheme('kb'); In.look.x += e.movementX; In.look.y += e.movementY; } });
   document.addEventListener('pointerlockchange', () => { In.locked = !!document.pointerLockElement; });
-  addEventListener('gamepadconnected', e => { In.brand = /054c|dualsense|dualshock|playstation|wireless controller/i.test(e.gamepad.id) ? 'ps' : /057e|switch|pro controller|joy-con/i.test(e.gamepad.id) ? 'switch' : 'xbox'; });
+  addEventListener('gamepadconnected', e => { In.brand = brandOf(e.gamepad.id); });
+  initDualSense();
   // touch
   const tp = document.getElementById('touch');
   addEventListener('touchstart', () => { In.setScheme('touch'); }, { passive: true });
@@ -81,25 +86,65 @@ export function pollInput() {
   // movement from keyboard
   let x = (kbDown.KeyD || kbDown.ArrowRight ? 1 : 0) - (kbDown.KeyA || kbDown.ArrowLeft ? 1 : 0);
   let y = (kbDown.KeyS || kbDown.ArrowDown ? 1 : 0) - (kbDown.KeyW || kbDown.ArrowUp ? 1 : 0);
-  // gamepad
-  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-  for (const gp of pads) {
-    if (!gp) continue;
+  // gamepad (all connected pads merged; the WebHID DualSense, when live, stands in for its Gamepad API twin)
+  const gp = readPad();
+  if (gp) {
     const dz = v => Math.abs(v) < 0.15 ? 0 : v;
     const ax = dz(gp.axes[0]), ay = dz(gp.axes[1]), rx = dz(gp.axes[2]), ry = dz(gp.axes[3]);
-    let any = ax || ay || rx || ry;
+    let any = ax || ay || rx || ry, tapped = false;
     for (const a in PAD) {
       const b = gp.buttons[PAD[a]]; const d = !!b && b.pressed; const was = !!In._padPrev[a];
       if (d && !was) { In.pressed[a] = true; any = true; }
       if (d) In.down[a] = true; else if (was) In.down[a] = false;
       In._padPrev[a] = d;
     }
-    if (any) { In.brand = /054c|dualsense|dualshock|playstation|wireless controller/i.test(gp.id) ? 'ps' : /057e|switch|pro controller|joy-con/i.test(gp.id) ? 'switch' : 'xbox'; In.setScheme('pad'); }
-    if (In.scheme === 'pad') { x += ax; y += ay; In.look.x += rx * 18; In.look.y += ry * 18; }
-    break;
+    gp.buttons.forEach((b, i) => { const d = !!b?.pressed, was = !!In._rawPrev[i]; if (d && !was) { any = true; if (i !== 6 && i !== 7) tapped = true; } In._rawPrev[i] = d; });
+    if (any) { In.brand = gp.brand; In.setScheme('pad'); }
+    if (In.scheme === 'pad') {
+      x += ax; y += ay; In.look.x += rx * 18; In.look.y += ry * 18;
+      if (tapped) haptic.tap();
+    }
   }
+  // gyro aim: while L2 (aim) is held the pad's own turning moves the view (look units: 0.0022 rad, x0.6 aimed)
+  const gy = drainGyro();
+  if (In.scheme === 'pad' && In.down.aim && DS.live) { const k = DS.gain / (0.0022 * 0.6); In.look.x -= gy.yaw * k; In.look.y -= gy.pitch * k; }
+  tickDualSense(In.down.aim);
   if (In.scheme === 'touch') { x += touchMove.x; y += touchMove.y; }
   const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
   In.move.x = x; In.move.y = y;
   In.back = !!(In.pressed.back);
+}
+
+
+const brandOf = id => /045e|xbox|xinput/i.test(id) ? 'xbox' : /054c|dualsense|dualshock|playstation|wireless controller/i.test(id) ? 'ps' : /057e|switch|pro controller|joy-con/i.test(id) ? 'switch' : 'xbox';
+// Firefox (until its DualSense remap ships) gives Sony pads raw: buttons square,cross,circle,triangle,L1,R1,L2,R2,
+// create,options,L3,R3,PS,touchpad; axes LX,LY,RX,L2,R2,RY ... hat on axis 9 (-1 up, clockwise in 2/7 steps).
+function sonyRaw(gp) {
+  const B = gp.buttons, A = gp.axes, b = i => B[i] || { pressed: false, value: 0 };
+  const trig = (i, bi) => { const v = A[i] === undefined ? b(bi).value : (A[i] + 1) / 2; return { pressed: b(bi).pressed || v > 0.12, value: v }; };
+  let up = 0, down = 0, left = 0, right = 0; const h = A[9];
+  if (h !== undefined && h >= -1.05 && h <= 1.05) { const k = Math.round((h + 1) * 3.5) & 7; up = k === 7 || k <= 1; right = k >= 1 && k <= 3; down = k >= 3 && k <= 5; left = k >= 5 && k <= 7; }
+  const d = v => ({ pressed: !!v, value: v ? 1 : 0 });
+  return { buttons: [b(1), b(2), b(0), b(3), b(4), b(5), trig(3, 6), trig(4, 7), b(8), b(9), b(10), b(11), d(up), d(down), d(left), d(right), b(12), b(13)], axes: [A[0] || 0, A[1] || 0, A[2] || 0, A[5] || 0] };
+}
+function norm(gp) {
+  const brand = brandOf(gp.id);
+  if (gp.mapping !== 'standard' && brand === 'ps' && gp.axes.length >= 6) return { id: gp.id, brand, ...sonyRaw(gp), src: gp };
+  return { id: gp.id, brand, buttons: [...gp.buttons], axes: [gp.axes[0] || 0, gp.axes[1] || 0, gp.axes[2] || 0, gp.axes[3] || 0], src: gp };
+}
+// One merged, standard-mapped pad: buttons OR'd, each stick taken from whichever pad pushes it hardest.
+export function readPad() {
+  const list = [];
+  if (DS.live && DS.pad) list.push({ ...DS.pad, brand: 'ps', src: null });
+  for (const gp of (navigator.getGamepads ? navigator.getGamepads() : [])) if (gp && gp.connected !== false) list.push(norm(gp));
+  if (!list.length) return null;
+  const out = { id: list[0].id, brand: list[0].brand, buttons: [], axes: [0, 0, 0, 0] }; let best = -1;
+  for (const p of list) {
+    let act = 0;
+    p.buttons.forEach((b, i) => { const o = out.buttons[i] || (out.buttons[i] = { pressed: false, value: 0 }); if (b?.pressed) { o.pressed = true; act++; } o.value = Math.max(o.value, b?.value || 0); });
+    for (const s of [0, 2]) { const m = Math.hypot(p.axes[s], p.axes[s + 1]); act += m > 0.3 ? 1 : 0; if (m > Math.hypot(out.axes[s], out.axes[s + 1])) { out.axes[s] = p.axes[s]; out.axes[s + 1] = p.axes[s + 1]; } }
+    if (act > best) { best = act; out.id = p.id; out.brand = p.brand; if (p.src) DS.gp = p.src; }
+  }
+  if (out.brand === 'ps' && !DS.dev) offerDualSense();
+  return out;
 }

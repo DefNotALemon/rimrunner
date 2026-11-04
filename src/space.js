@@ -290,7 +290,7 @@ export class Space {
   updateBolts(dt, active) {
     const s = this.ship; this._fireCd = (this._fireCd || 0) - dt;
     if (active && In.down.fire && this._fireCd <= 0 && !this.disabled && this.law.state !== 'pulled') {
-      this._fireCd = 0.14; const fw = this.forward();
+      this._fireCd = 0.14; const fw = this.forward(); In.haptic.shot(0.2);
       this.fireBolt(s.pos.clone().addScaledVector(fw, 14), s.pos.clone().addScaledVector(fw, 4000), true);
       if ((this.inLane || (this.near && this.nearAlt < 8000)) && !this._weap) { this._weap = 4; toast('Weapons discharge near a spaceway is reported.', 'warn'); this.addOffence('weapons', 'discharge', 28); }
     }
