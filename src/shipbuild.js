@@ -125,8 +125,9 @@ export function buildShip(ship, S) {
         bx('glass', 0xa8d0e8, g0, g1, 1.0, 2.3, -0.02, 0.02); for (const f of [g0, g1 - 0.06]) bx('matte', corp.trim, f, f + 0.06, 1.0, 2.3, -t / 2 - 0.03, t / 2 + 0.03); bx('matte', corp.trim, g0, g1, 1.0, 1.06, -t / 2 - 0.04, t / 2 + 0.04); bx('matte', corp.trim, g0, g1, 2.24, 2.3, -t / 2 - 0.04, t / 2 + 0.04); bx('matte', corp.trim, (g0 + g1) / 2 - 0.02, (g0 + g1) / 2 + 0.02, 1.0, 2.3, -0.03, 0.03);
         for (const sd of sides) { bx('matte', sd.m.theme.dado, g0, g1, 0, 1.0, sd.off0, sd.off1); bx('matte', sd.m.theme.wall, g0, g1, 2.3, Math.min(sd.m.H, hh), sd.off0, sd.off1); }
         cl(g0, g1); cur = g1; continue; }
-      bx('matte', wc, g0, g1, hy, hh, -t / 2, t / 2); bx('matte', corp.trim, g0, g1, hy - 0.06, hy, -t / 2 - 0.04, t / 2 + 0.04);
-      bx('matte', corp.trim, g0 - 0.1, g0, 0, hy, -t / 2 - 0.04, t / 2 + 0.04); bx('matte', corp.trim, g1, g1 + 0.1, 0, hy, -t / 2 - 0.04, t / 2 + 0.04);
+      // jambs lap 3 cm into the opening and the head casing hangs below the header, so no trim face shares a plane with the cut wall ends (z-fight flicker)
+      bx('matte', wc, g0, g1, hy, hh, -t / 2, t / 2); bx('matte', corp.trim, g0, g1, hy - 0.08, hy + 0.02, -t / 2 - 0.04, t / 2 + 0.04);
+      bx('matte', corp.trim, g0 - 0.1, g0 + 0.03, 0, hy - 0.04, -t / 2 - 0.04, t / 2 + 0.04); bx('matte', corp.trim, g1 - 0.03, g1 + 0.1, 0, hy - 0.04, -t / 2 - 0.04, t / 2 + 0.04);
       for (const sd of sides) bx('matte', sd.m.theme.wall, g0, g1, hy, Math.min(sd.m.H, hh), sd.off0, sd.off1);
       cur = g1;
     }
@@ -172,7 +173,7 @@ export function buildShip(ship, S) {
     if (cv.kind !== 'duct') for (let s = s0 + 2; s < s0 + len - 1; s += 6) { const [x, z] = at(s); if (ownAt(x, z) === 0) box('matte', jit(corp.dado), cv.dir === 'x' ? x - 0.12 : x - wd / 2 + 0.05, cv.dir === 'x' ? x + 0.12 : x + wd / 2 - 0.05, hc - 0.16, hc, cv.dir === 'x' ? z - wd / 2 + 0.05 : z - 0.12, cv.dir === 'x' ? z + wd / 2 - 0.05 : z + 0.12); }
     if (len > 8) { const side = r() < 0.5 ? -1 : 1, off = side * (wd / 2 - 0.35), s1 = s0 + 1.5, s2 = s0 + len - 1.5, rad = cv.kind === 'duct' ? 0.07 : r.range(0.08, 0.14);
       if (cv.dir === 'x') { cylX('metal', jit(0x6a7076), s1, s2, hc - 0.3, mid + off, rad); if (r() < 0.6) cylX('metal', jit(corp.trim), s1, s2, hc - 0.55, mid + off, 0.05); } else { cylZ('metal', jit(0x6a7076), s1, s2, hc - 0.3, mid + off, rad); if (r() < 0.6) cylZ('metal', jit(corp.trim), s1, s2, hc - 0.55, mid + off, 0.05); } }
-    if (cv.kind === 'spine' && cv.dir === 'x') for (let s = cv.x0 + 1; s < cv.x1 - 1; s += 2) { const z = mid; if (ownAt(s + 0.5, z) === 0) box('emis', acc, s, s + 1, 0.012, 0.02, z - 0.04, z + 0.04); }
+    if (cv.kind === 'spine' && cv.dir === 'x') for (let s = cv.x0 + 1; s < cv.x1 - 1; s += 2) { const z = mid; if (ownAt(s + 0.5, z) === 0) box('emis', acc, s, s + 1, 0.012, 0.023, z - 0.04, z + 0.04); }
   }
   // dock vestibules: a distinct floor + frame so arriving reads as a place
   for (const gx of [0, W - E]) { box('matte', corp.floor2, gx, gx + E, 0.012, 0.02, -ship.gh, ship.gh); for (const z of [-ship.gh + 2.5, 0, ship.gh - 2.5]) lampDir(gx + E / 2, z, 'x', r() > 0.1, H); }
@@ -183,7 +184,7 @@ export function buildShip(ship, S) {
     cyl('metal', jit(0x3a4048), cx, cz, 1.6, 0, 0.4); cyl('emis', acc, cx, cz, 1.64, 0.22, 0.27); cyl('matte', 0x23403a, cx, cz, 1.2, 0.4, 0.46); col(cx - 1.6, cx + 1.6, cz - 1.6, cz + 1.6, 0.46);
     for (const [px, pz] of [[x0 + 3.2, z0 + 3.2], [x1 - 3.2, z0 + 3.2], [x0 + 3.2, z1 - 3.2], [x1 - 3.2, z1 - 3.2]]) { cyl('metal', jit(corp.dado), px, pz, 0.38, 0, hp); cyl('matte', corp.trim, px, pz, 0.43, 1.0, 1.08); cyl('matte', corp.trim, px, pz, 0.43, hp - 0.4, hp - 0.32); col(px - 0.4, px + 0.4, pz - 0.4, pz + 0.4, hp); }
     // balcony rim along the walls: overhead depth, high enough to walk under
-    const by = 3.35; for (const [a0, a1, b0, b1] of [[x0, x1, z0 + 0.0, z0 + 1.0], [x0, x1, z1 - 1.0, z1], [x0, x0 + 1.0, z0, z1], [x1 - 1.0, x1, z0, z1]]) { box('metal', jit(0x3a4048), a0, a1, by, by + 0.14, b0, b1); }
+    const by = 3.35; for (const [a0, a1, b0, b1] of [[x0, x1, z0 + 0.0, z0 + 1.0], [x0, x1, z1 - 1.0, z1], [x0, x0 + 1.0, z0 + 1.0, z1 - 1.0], [x1 - 1.0, x1, z0 + 1.0, z1 - 1.0]]) { box('metal', jit(0x3a4048), a0, a1, by, by + 0.14, b0, b1); }
     for (const [a0, a1, b0, b1] of [[x0 + 1.0, x1 - 1.0, z0 + 1.0, z0 + 1.04], [x0 + 1.0, x1 - 1.0, z1 - 1.04, z1 - 1.0], [x0 + 1.0, x0 + 1.04, z0 + 1.0, z1 - 1.0], [x1 - 1.04, x1 - 1.0, z0 + 1.0, z1 - 1.0]]) { box('metal', 0x555b63, a0, a1, by + 0.14, by + 1.0, b0, b1); box('emis', acc, a0, a1, by + 1.0, by + 1.04, b0, b1); }
   }
   // port doors + airlock chambers
@@ -306,7 +307,7 @@ export function buildShip(ship, S) {
       }
     }
     // per-room extras so no two rooms read the same: wall screens, ceiling ducts, pillars
-    { const nScr = r.int(1, 3); for (let i = 0; i < nScr; i++) { const back = r() < 0.5, zf = back ? m.z1 - 0.2 : m.z0 + 0.2, x = r.range(m.x0 + 1.4, m.x1 - 1.4); if (hitLane(x - 0.9, x + 0.9, zf - 0.3, zf + 0.3)) continue; const w = r.range(0.8, 1.6); box('metal', 0x15171a, x - w / 2 - 0.05, x + w / 2 + 0.05, 1.45, 2.05, back ? zf - 0.02 : zf - 0.02, back ? zf + 0.02 : zf + 0.02); box('emis', new THREE.Color(th.acc).multiplyScalar(r.range(0.5, 0.9)).getHex(), x - w / 2, x + w / 2, 1.5, 2.0, back ? zf - 0.04 : zf + 0.0, back ? zf - 0.0 : zf + 0.04); }
+    { const nScr = r.int(1, 3), scr = []; for (let i = 0; i < nScr; i++) { const back = r() < 0.5, zf = back ? m.z1 - 0.2 : m.z0 + 0.2, x = r.range(m.x0 + 1.4, m.x1 - 1.4); if (hitLane(x - 0.9, x + 0.9, zf - 0.3, zf + 0.3)) continue; if (scr.some(q => q[0] === back && Math.abs(q[1] - x) < 1.8)) continue; scr.push([back, x]); const w = r.range(0.8, 1.6); box('metal', 0x15171a, x - w / 2 - 0.05, x + w / 2 + 0.05, 1.45, 2.05, back ? zf - 0.02 : zf - 0.02, back ? zf + 0.02 : zf + 0.02); box('emis', new THREE.Color(th.acc).multiplyScalar(r.range(0.5, 0.9)).getHex(), x - w / 2, x + w / 2, 1.5, 2.0, back ? zf - 0.04 : zf + 0.0, back ? zf - 0.0 : zf + 0.04); }
       if (r() < 0.6) { const zz = r.range(m.z0 + 1.4, m.z1 - 1.4); cylX('metal', mixc(th.dado, 0x888888, 0.4), m.x0 + 0.3, m.x1 - 0.3, H - 0.4, zz, r.range(0.1, 0.22)); if (r() < 0.5) cylX('metal', th.acc, m.x0 + 0.3, m.x1 - 0.3, H - 0.65, zz + 0.4, 0.06); }
       if (m.x1 - m.x0 > 13 && !['serverhall', 'tankhall', 'cellblock', 'vault', 'evidence'].includes(m.type) && r() < 0.6) for (const fx of [0.3, 0.7]) prop(m.x0 + (m.x1 - m.x0) * fx, (m.z0 + m.z1) / 2 + r.range(-2, 2), 0.55, 0.55, H, (x, z) => { box('metal', mixc(th.dado, 0x777777, 0.3), x - 0.27, x + 0.27, 0, H, z - 0.27, z + 0.27); box('emis', new THREE.Color(th.acc).multiplyScalar(0.6).getHex(), x - 0.28, x + 0.28, 1.0, 1.06, z - 0.28, z + 0.28); }); }
     // ceiling light panels
