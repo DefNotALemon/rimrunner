@@ -160,6 +160,41 @@ export class Player {
     }
     this.focusTarget = best;
   }
+  // how far (0..1) the camera can sit along pivot->want before a wall/prop is in the way
+  fitRoom(from, to) {
+    const d = to.clone().sub(from), len = d.length(); if (len < 1e-4) return 1;
+    let best = 1;
+    for (const c of this.surf.colliders) {
+      if (c.roof || c.id === 'ship') continue;
+      const top = c.maxy ?? 99; if (top < from.y - 0.2 && top < to.y - 0.2) continue;
+      const m = 0.3, x0 = c.minx - m, x1 = c.maxx + m, z0 = c.minz - m, z1 = c.maxz + m;
+      let t0 = 0, t1 = 1;
+      for (const [o, dd, lo, hi] of [[from.x, d.x, x0, x1], [from.z, d.z, z0, z1]]) {
+        if (Math.abs(dd) < 1e-6) { if (o < lo || o > hi) { t0 = 2; break; } } else { let a = (lo - o) / dd, b = (hi - o) / dd; if (a > b) { const t = a; a = b; b = t; } t0 = Math.max(t0, a); t1 = Math.min(t1, b); }
+      }
+      if (t0 <= t1 && t0 > 0 && t0 < best) best = t0;
+    }
+    return Math.max(0.12, best);
+  }
+  // where a shot fired from the body lands when the lens is somewhere else; also drives the sliding crosshair
+  updateAimPoint(dt) {
+    const cam = this.cam, tp = this.tp ?? 0; this.xh = this.xh || { x: 0, y: 0 };
+    let tx = 0, ty = 0;
+    this.aimDir = null;
+    if (this.tpU > 0.02) {
+      const f = V(0, 0, -1).applyQuaternion(cam.quaternion), range = 70;
+      const hitC = this.rayWorld(cam.position, f, range, 0.6, 0.6);
+      const target = cam.position.clone().addScaledVector(f, hitC);
+      const origin = V(this.pos.x, this.pos.y + EYE - 0.05, this.pos.z), dir = target.clone().sub(origin); const dl = dir.length();
+      if (dl > 0.5) {
+        dir.divideScalar(dl); this.aimDir = dir;
+        const wd = this.rayWorld(origin, dir, dl, 0.6); const land = origin.clone().addScaledVector(dir, Math.min(dl, wd));
+        const pr = land.project(cam); tx = clamp(pr.x, -0.9, 0.9) * innerWidth / 2; ty = clamp(-pr.y, -0.9, 0.9) * innerHeight / 2;
+        if (pr.z > 1) { tx = 0; ty = 0; }
+      }
+    }
+    const k = 1 - Math.exp(-22 * dt); this.xh.x += (tx - this.xh.x) * k; this.xh.y += (ty - this.xh.y) * k;
+  }
   camForward() { return V(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ')); }
 
   updateWeapons(dt, ctx, hasInput) {
@@ -187,7 +222,7 @@ export class Player {
     const dmgMul = (g.q || 1) * (1 + 0.04 * lvl('gunsmith'));
     for (let i = 0; i < spec.pellets; i++) {
       const sp = spec.spread * (1 - this.aim * 0.55) * (this.crouch ? 0.8 : 1) * (1 + Math.min(1, Math.hypot(this.vel.x, this.vel.z) / 5));
-      const dir = this.camForward(); dir.x += (Math.random() - 0.5) * sp * 2; dir.y += (Math.random() - 0.5) * sp * 2; dir.z += (Math.random() - 0.5) * sp * 2; dir.normalize();
+      const dir = (this.aimDir ? this.aimDir.clone().lerp(this.camForward(), 1 - this.tpU).normalize() : this.camForward()); dir.x += (Math.random() - 0.5) * sp * 2; dir.y += (Math.random() - 0.5) * sp * 2; dir.z += (Math.random() - 0.5) * sp * 2; dir.normalize();
       let hit = null, hd = spec.range;
       for (const n of ctx.npcs) {
         if (n.dead) continue; const c = V(n.pos.x, n.pos.y + 0.9, n.pos.z); const to = c.clone().sub(origin); const t = to.dot(dir); if (t < 0 || t > hd) continue;
@@ -200,10 +235,20 @@ export class Player {
       if (hit) { const head = end.y - hit.pos.y > 1.5; ctx.hitNPC(hit, spec.dmg * dmgMul * (head ? 2 : 1), head); this.impact(end, 0xff4040); } else if (hd < spec.range) this.impact(end, 0xffe0a0);
     }
   }
-  rayWorld(o, d, max) {
-    let t = 0.3; const s = this.surf;
-    while (t < max) { const p = o.clone().addScaledVector(d, t); if (p.y < s.heightAt(p.x, p.z)) return t; for (const c of s.colliders) { if (c.roof) continue; if (p.x > c.minx && p.x < c.maxx && p.z > c.minz && p.z < c.maxz && p.y < (c.maxy ?? 99)) return t; } t += 0.35; }
-    return max;
+  rayWorld(o, d, max, step = 0.35, t0 = 0.3) {
+    const s = this.surf; let best = max;
+    // terrain: coarse march
+    for (let t = t0; t < best; t += step) { if (o.y + d.y * t < s.heightAt(o.x + d.x * t, o.z + d.z * t)) { best = t; break; } }
+    // props and walls: exact slab test so thin walls can't be stepped through
+    for (const c of s.colliders) {
+      if (c.roof) continue;
+      let a = t0, b = best;
+      for (const [oo, dd, lo, hi] of [[o.x, d.x, c.minx, c.maxx], [o.z, d.z, c.minz, c.maxz]]) {
+        if (Math.abs(dd) < 1e-9) { if (oo < lo || oo > hi) { a = 2e9; break; } } else { let t1 = (lo - oo) / dd, t2 = (hi - oo) / dd; if (t1 > t2) { const t = t1; t1 = t2; t2 = t; } if (t1 > a) a = t1; if (t2 < b) b = t2; }
+      }
+      if (a <= b && a < best && o.y + d.y * a < (c.maxy ?? 99)) best = a;
+    }
+    return best;
   }
   impact(pos, col) {
     const m = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 4), new THREE.MeshBasicMaterial({ color: col, transparent: true })); m.position.copy(pos); this.scene.add(m); this.impacts.push({ m, t: 0.25 });
@@ -287,22 +332,42 @@ export class Player {
     const forward = V(0, 0, -1).applyAxisAngle(V(0, 1, 0), this.yaw);
     const e = V(this.pos.x, this.pos.y + eye, this.pos.z).addScaledVector(forward, 0.1 + (this.crouchBlend * 0.04)).add(V(Math.cos(this.yaw) * side + ox, 0, -Math.sin(this.yaw) * side + oz));
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.pitch + this.pitchOff + pitch + lp - this.recoil * 0.035, this.yaw, roll + lr, 'YXZ'));
-    // third-person orbit (V or idle): GTA V / Skyrim style
-    const tp = Math.max(this.thirdPerson ? 1 : 0, this.idleCam);
+    // third-person: V toggles an over-the-back orbit that eases in/out (no snap), tightens to an over-the-shoulder view when aiming,
+    // and pulls in so it always fits the room (walls + ceiling) you are standing in.
+    this.tpU = damp(this.tpU ?? 0, this.thirdPerson ? 1 : 0, 5, dt);
+    this.aimC = damp(this.aimC ?? 0, G.hand ? this.aim : 0, 7, dt);
+    const tp = Math.max(this.tpU, this.idleCam);
     this.tp = tp;
     if (tp > 0.01) {
-      this.orbit += dt * 0.12 * this.idleCam;
-      const base = this.thirdPerson && this.idleCam < 0.5 ? this.yaw : this.yaw + this.orbit + Math.PI * 0.2 * this.idleCam;
-      const dist = lerp(0, this.idleCam > 0.5 ? 3.6 : 3.1, tp); const pivot = V(this.pos.x, this.pos.y + 1.5, this.pos.z);
-      const dir = V(Math.sin(base), 0.0, Math.cos(base)).multiplyScalar(dist); dir.y = 0.35 + (this.pitch * -0.8) + (this.idleCam * 0.2);
-      const want = pivot.clone().add(dir);
-      const camPos = e.clone().lerp(want, tp); cam.position.copy(camPos);
-      const look = new THREE.Matrix4().lookAt(camPos, pivot, V(0, 1, 0)); const tq = new THREE.Quaternion().setFromRotationMatrix(look);
-      cam.quaternion.copy(q).slerp(tq, tp);
-    } else { cam.position.copy(e); cam.quaternion.copy(q); }
+      let tpPos, tpQuat;
+      if (this.idleCam > 0.5 && !this.thirdPerson) {
+        this.orbit += dt * 0.12 * this.idleCam;
+        const base = this.yaw + this.orbit + Math.PI * 0.2 * this.idleCam;
+        const pivot = V(this.pos.x, this.pos.y + 1.5, this.pos.z);
+        const dir = V(Math.sin(base), 0.0, Math.cos(base)).multiplyScalar(3.6); dir.y = 0.35 + (this.pitch * -0.8) + 0.2;
+        tpPos = pivot.clone().add(dir);
+        tpQuat = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(tpPos, pivot, V(0, 1, 0)));
+      } else {
+        const ac = this.aimC, f = this.camForward();
+        const pivot = V(this.pos.x, e.y + 0.05, this.pos.z);
+        const right = V(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
+        const dist = lerp(3.1, 1.25, ac), shoulder = lerp(0.3, 0.55, ac), up = lerp(0.3, 0.12, ac);
+        const full = pivot.clone().addScaledVector(right, shoulder).addScaledVector(f, -dist); full.y += up;
+        // fit to the room: shorten the pull-back until nothing is between the pivot and the lens
+        const room = this.fitRoom(pivot, full);
+        this.camFit = this.camFit ?? 1; this.camFit = damp(this.camFit, room, room < this.camFit ? 30 : 3.5, dt);
+        if (this.camFit > room) this.camFit = room;
+        tpPos = pivot.clone().lerp(full, this.camFit);
+        const bd = this.surf.buildings?.find(b => this.pos.x > b.x0 && this.pos.x < b.x1 && this.pos.z > b.z0 && this.pos.z < b.z1);
+        if (bd) tpPos.y = Math.min(tpPos.y, this.pos.y + (bd.h || 3.2) - 0.25);
+        tpQuat = q;
+      }
+      cam.position.copy(e).lerp(tpPos, tp); cam.quaternion.copy(q).slerp(tpQuat, tp);
+    } else { cam.position.copy(e); cam.quaternion.copy(q); this.camFit = 1; }
     // ground clip
     const gy = s.heightAt(cam.position.x, cam.position.z) + 0.15; if (cam.position.y < gy) cam.position.y = gy;
-    cam.fov = this.fov; cam.updateProjectionMatrix();
+    cam.fov = this.fov; cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
+    this.updateAimPoint(dt);
     // viewmodel: lag behind look for weight (cyberpunk-mod feel)
     this._lastYaw = this._lastYaw ?? this.yaw; this._lastPitch = this._lastPitch ?? this.pitch;
     let dy = this.yaw - this._lastYaw; while (dy > Math.PI) dy -= 6.283; while (dy < -Math.PI) dy += 6.283; const dp = this.pitch - this._lastPitch; this._lastYaw = this.yaw; this._lastPitch = this.pitch;

@@ -68,7 +68,7 @@ export class UI {
     $('#bars').innerHTML = mode === 'space' ? bar('FUEL', G.fuel, '#e8742a') + bar('HULL', G.hull, '#7dd86a') : bar('HP', G.hp, '#e05050') + bar('FOOD', G.hunger, '#d9a441') + bar('WATER', G.thirst, '#58b4ff') + (S.surf && S.surf.air < 0.3 || G.oxygen < 99 ? bar('O2', G.oxygen, '#9fe8ff') : '') + (G.temp > 5 ? bar(S.surf && S.surf.planet.temp < 0.5 ? 'COLD' : 'HEAT', G.temp, '#ff9a5a') : '');
     const day = surf ? (() => { const t = (G.time / 600 + 0.3) % 1; return t < 0.08 ? 'Dawn' : t < 0.4 ? 'Day' : t < 0.5 ? 'Dusk' : 'Night'; })() : '';
     $('#statline').textContent = mode === 'space' ? `${space.sys.name} system${space.sys.uncharted ? ' · uncharted' : ''}` : `${surf.planet.name} · ${surf.planet.kind}${mode === 'foot' && surf.planet.air < 0.3 ? ' · thin air' : ''} · ${day}`;
-    const cross = $('#cross'); cross.style.display = (mode === 'foot' && !this.modal && player.tp < 0.5) ? 'block' : 'none';
+    const cross = $('#cross'); cross.style.display = (mode === 'foot' && !this.modal && (player.tp < 0.5 || player.tpU > 0.01)) ? 'block' : 'none'; if (player.xh) cross.style.transform = `translate(${player.xh.x.toFixed(1)}px,${player.xh.y.toFixed(1)}px)`;
     const spread = mode === 'foot' ? (G.hand ? 10 + player.recoil * 14 - player.aim * 7 : 4) : 4; cross.style.setProperty('--s', spread + 'px'); cross.className = G.hand ? 'gun' : '';
     $('#vig').style.opacity = mode === 'foot' ? clamp(player.focus * 0.9 + player.aim * 0.2, 0, 1) : 0;
     $('#hurt').style.opacity = mode === 'foot' ? clamp(player.hurtT * 2.2 + (G.hp < 25 ? 0.25 : 0), 0, 0.7) : 0;
