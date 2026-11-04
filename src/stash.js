@@ -1,9 +1,11 @@
 // Hands-on containers: chests, lockers, cases and cabinets open where they stand (lid lifts, door swings, drawer slides out)
 // with the contents lying inside as real 3D items. Aim at one and click to reach out and grab it into the bag on your
 // shoulder. A full bag never grabs: the centre of the screen says INVENTORY FULL and the item shakes. The pack stays on your back.
+// DISPLAYS (S.displays, storage.js): loot shelves and open containers (pallet, tool board, salvage bin) need no search: their
+// items are built when you come near and you grab them straight off the tier. Glass med cabinets show their contents but open first.
 import * as THREE from '../vendor/three.module.js';
 import { G, toast, addItem, addGun, uid } from './state.js';
-import { ITEMS } from './data.js';
+import { ITEMS, describe } from './data.js';
 import { itemMesh } from './models.js';
 import { In } from './input.js';
 import { sfx } from './audio.js';
@@ -12,6 +14,22 @@ const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const HIT = new THREE.MeshBasicMaterial({ visible: false });
 const ease = k => k * k * (3 - 2 * k);
 const REACH = 3.4;   // walk further than this from an open container and it shuts again
+const SHOW_R = 16, HIDE_R = 19;   // display items are built / shown within SHOW_R of the player, hidden past HIDE_R
+const hash = (a, b, i) => { const v = Math.sin(a * 12.9898 + b * 78.233 + i * 37.719) * 43758.5453; return v - Math.floor(v); };
+// does the segment a->b cross a collider (walls, other props)? the collider holding b (the item's own shelf/bin) is ignored
+function blocked(S, a, b) {
+  for (const c of (S && S.colliders) || []) {
+    if (c.roof) continue; const top = c.maxy ?? 99;
+    if (b.x > c.minx && b.x < c.maxx && b.z > c.minz && b.z < c.maxz) continue; if (a.x > c.minx && a.x < c.maxx && a.z > c.minz && a.z < c.maxz && a.y < top) continue;
+    let t0 = 0, t1 = 1;
+    for (const [o, d, lo, hi] of [[a.x, b.x - a.x, c.minx, c.maxx], [a.y, b.y - a.y, -1, top], [a.z, b.z - a.z, c.minz, c.maxz]]) {
+      if (Math.abs(d) < 1e-9) { if (o < lo || o > hi) { t0 = 2; break; } continue; }
+      let p = (lo - o) / d, q = (hi - o) / d; if (p > q) [p, q] = [q, p]; t0 = Math.max(t0, p); t1 = Math.min(t1, q); if (t0 > t1) break;
+    }
+    if (t0 <= t1 && t0 < 1) return true;
+  }
+  return false;
+}
 
 // where the contents lie, in the container's local space (front is +z): shelves of [y, innerHalfWidth]
 function layoutFor(c) {
@@ -42,21 +60,36 @@ export class Stash {
     if (!c.rig) return false;
     this.cur = c; c.onEmpty = onEmpty; c.rig.want = 1; this.anims.add(c); this.build(c); sfx('zip', 0.5); return true;
   }
-  close() { const c = this.cur; if (!c) return; this.cur = null; c.rig.want = 0; this.anims.add(c); this.hoverItem = null; this.ring.visible = false; this.prompt = ''; sfx('zip', 0.4); }
+  close() { const c = this.cur; if (!c) return; this.cur = null; c.rig.want = 0; this.anims.add(c); this.hoverItem = null; this.ring.visible = false; this.prompt = ''; this.tagShow(); sfx('zip', 0.4); }
   closeAll() { this.close(); }
 
-  // items as real objects lying in the open container
+  // items as real objects lying in the open container (or on a shelf): every item rests exactly on its floor/tier top
   build(c) {
     for (const it of c.itemObjs || []) it.group.parent && it.group.parent.remove(it.group);
     c.itemObjs = []; const R = c.rig, ents = c.entries || (c.entries = []);
-    const n = ents.length;
+    const n = ents.length, tiers = c.tiers && c.tiers.length ? c.tiers : null, per = tiers ? tiers.map(() => []) : null;
     ents.forEach((e, i) => {
       if (!e) return; const g = new THREE.Group(); const m = itemMesh(e.id); const isGun = ITEMS[e.id].kind === 'gun';
-      const box = new THREE.Box3().setFromObject(m), sz = box.getSize(V()); const sc = isGun ? Math.min(1, (R.k.w - 0.14) / Math.max(sz.x, sz.z, 0.01), 0.5 / Math.max(sz.x, sz.z, 0.01)) : 1.5;
-      m.scale.multiplyScalar(sc); if (isGun && sz.x < sz.z) m.rotation.y = 0; g.add(m);
-      const p = slotPos(c, i, n); g.position.copy(p); g.userData.base = p.clone();
-      const hit = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.17, sz.x * sc), 0.2, Math.max(0.17, sz.z * sc)), HIT); hit.position.y = 0.09; hit.userData.entry = e; g.add(hit);
+      let box = new THREE.Box3().setFromObject(m, true), sz = box.getSize(V()); let sc;
+      if (tiers) {   // long side along the tier, a little random yaw for loose things
+        const t = e.tier >= 0 && e.tier < tiers.length ? e.tier : i % tiers.length, tl = tiers[t].x1 - tiers[t].x0;
+        if (sz.z > sz.x) m.rotation.y = Math.PI / 2;
+        const L = Math.max(sz.x, sz.z, 0.01); sc = isGun ? Math.min(1, (tl - 0.06) / L, (R.k.gunMax || 0.5) / L) : 1.5;
+        if (!isGun) m.rotation.y += (hash(c.x, c.z, i) - 0.5) * 0.5;
+        per[t].push({ g, e });
+      } else sc = isGun ? Math.min(1, (R.k.w - 0.14) / Math.max(sz.x, sz.z, 0.01), 0.5 / Math.max(sz.x, sz.z, 0.01)) : 1.5;
+      m.scale.multiplyScalar(sc);
+      box = new THREE.Box3().setFromObject(m, true); sz = box.getSize(V());
+      m.position.x -= (box.min.x + box.max.x) / 2; m.position.z -= (box.min.z + box.max.z) / 2; m.position.y -= box.min.y;   // centred, bottom on y=0
+      g.add(m); g.userData.sz = sz;
+      if (!tiers) { const p = slotPos(c, i, n); g.position.copy(p); g.userData.base = p.clone(); }
+      const hh = Math.max(0.12, sz.y) + 0.04, hit = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.17, sz.x), hh, Math.max(0.17, sz.z)), HIT); hit.position.y = hh / 2 - 0.01; hit.userData.entry = e; g.add(hit);
       R.tray.add(g); c.itemObjs.push({ group: g, hit, entry: e, shake: 0 });
+    });
+    if (tiers) per.forEach((L, t) => {   // spread each tier's items evenly along it
+      const T = tiers[t], len = T.x1 - T.x0, W = L.reduce((a, o) => a + o.g.userData.sz.x, 0), gap = (len - W) / (L.length + 1); let x = T.x0 + gap;
+      L.forEach((o, j) => { const sz = o.g.userData.sz, room = Math.max(0, (T.z1 - T.z0 - sz.z) / 2), zc = (T.z0 + T.z1) / 2 + (hash(c.z, c.x, t * 7 + j) - 0.5) * 1.2 * room;
+        o.g.position.set(x + sz.x / 2, T.y, zc); o.g.userData.base = o.g.position.clone(); x += sz.x + gap; });
     });
   }
 
@@ -64,24 +97,59 @@ export class Stash {
   update(dt, player, ctx) {
     for (const c of [...this.anims]) {
       const R = c.rig, d = R.want - R.t, step = dt / 0.55; R.t = Math.abs(d) <= step ? R.want : R.t + Math.sign(d) * step;
-      const e = ease(R.t); R.apply(e); const showing = R.t > 0.35; for (const it of c.itemObjs || []) it.group.visible = showing;
+      const e = ease(R.t); R.apply(e); const showing = R.t > 0.35 || !!c.show; for (const it of c.itemObjs || []) it.group.visible = showing;
       if (R.t === R.want) this.anims.delete(c);
     }
     this.flyUpdate(dt);
     if (this.msgT > 0) { this.msgT -= dt; if (this.msg) { this.msg.style.opacity = Math.min(1, this.msgT * 3); if (this.msgT <= 0) this.msg.style.display = 'none'; } }
     this.hoverItem = null; this.ring.visible = false; this.prompt = '';
-    const c = this.cur; if (!c) return;
+    const S = ctx && ctx.surf; this.lod(dt, player, S);
+    const c = this.cur; if (!c) { this.hoverDisplays(player, ctx, S); this.tagShow(); return; }
     if (Math.hypot(player.pos.x - c.x, player.pos.z - c.z) > REACH) { this.close(); return; }
     for (const it of c.itemObjs) { if (it.shake > 0) { it.shake -= dt; const k = Math.sin(it.shake * 60) * 0.015 * Math.min(1, it.shake * 4); it.group.position.x = it.group.userData.base.x + k; } else it.group.position.x = it.group.userData.base.x; }
-    if (c.rig.t < 0.9) return;
+    if (c.rig.t < 0.9) { this.tagShow(); return; }
     this.ray.setFromCamera({ x: 0, y: 0 }, this.camera); const hits = this.ray.intersectObjects(c.itemObjs.map(i => i.hit), false);
     if (hits.length) {
-      const it = c.itemObjs.find(i => i.hit === hits[0].object); this.hoverItem = it; const e = it.entry, def = ITEMS[e.id];
-      this.ring.visible = true; it.hit.getWorldPosition(this.ring.position); this.ring.position.y += 0.04; this.ring.quaternion.copy(this.camera.quaternion);
-      const name = def.name + (e.uid ? '' : (e.n > 1 ? ` ×${e.n}` : ''));
-      this.prompt = `<b>${name}</b> <small><kbd>${In.label('fire')}</kbd> grab · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('fire')}</kbd> one</small>`;
+      const it = c.itemObjs.find(i => i.hit === hits[0].object); this.hover(it);
+      this.prompt = `<b>${this.nameOf(it.entry)}</b> <small><kbd>${In.label('fire')}</kbd> grab · <kbd>${In.label('sprint')}</kbd>+<kbd>${In.label('fire')}</kbd> one · <kbd>${In.label('interact')}</kbd> close</small>`;
       if (In.pressed.fire) { this.grab(c, it, !!In.down.sprint); In.pressed.fire = false; In.down.fire = false; }
     } else this.prompt = `<small><kbd>${In.label('interact')}</kbd> close</small>`;
+    this.tagShow();
+  }
+  nameOf(e) { return ITEMS[e.id].name + (e.uid ? '' : (e.n > 1 ? ` ×${e.n}` : '')); }
+  hover(it) { this.hoverItem = it; this.ring.visible = true; it.hit.getWorldPosition(this.ring.position); this.ring.position.y += 0.04; this.ring.quaternion.copy(this.camera.quaternion); }
+
+  // ---- displays: shelves + open containers. Items exist only near the player; aim + fire grabs, no search, no menu ----
+  lod(dt, player, S) {
+    if (!S || !S.displays || !S.displays.length) return; if ((this.lodT = (this.lodT || 0) - dt) > 0 && this.lodS === S) return; this.lodT = 0.25; this.lodS = S;
+    for (const d of S.displays) {
+      const q = Math.hypot(player.pos.x - d.x, player.pos.z - d.z);
+      if (q < SHOW_R && !d.itemObjs) this.build(d);
+      if (d.itemObjs) d.rig.tray.visible = q < SHOW_R || (q < HIDE_R && d.rig.tray.visible);
+    }
+  }
+  hoverDisplays(player, ctx, S) {
+    if (!S || !S.displays || ctx.active === false || ctx.wheel || In.down.aim || player.dead) return;
+    const near = S.displays.filter(d => d.open && d.itemObjs && d.itemObjs.length && d.rig.tray.visible && Math.hypot(player.pos.x - d.x, player.pos.z - d.z) < REACH + Math.max(d.k.w, d.k.d) / 2);
+    if (!near.length) return;
+    const hs = []; for (const d of near) for (const it of d.itemObjs) hs.push(it.hit);
+    const cp = this.camera.position, cd = Math.hypot(cp.x - player.pos.x, cp.z - player.pos.z);   // third person: the lens sits behind you
+    this.ray.setFromCamera({ x: 0, y: 0 }, this.camera); this.ray.far = REACH + cd; const hits = this.ray.intersectObjects(hs, false); this.ray.far = REACH + 1;
+    if (!hits.length || Math.hypot(hits[0].point.x - player.pos.x, hits[0].point.z - player.pos.z) > REACH) return;
+    const h = hits[0], d = near.find(q => q.itemObjs.some(i => i.hit === h.object)), it = d.itemObjs.find(i => i.hit === h.object);
+    const ip = it.group.getWorldPosition(V()); ip.y += 0.05; if (blocked(S, this.camera.position, ip)) return;   // aim at the item's body, not the hit box rim
+    this.hover(it); this.hoverFrom = d;
+    for (const o of d.itemObjs) { if (o.shake > 0) { o.shake -= 1 / 60; o.group.position.x = o.group.userData.base.x + Math.sin(o.shake * 60) * 0.015 * Math.min(1, o.shake * 4); } else if (o.group.userData.base) o.group.position.x = o.group.userData.base.x; }
+    if (In.pressed.fire) { this.grab(d, it, !!In.down.sprint); In.pressed.fire = false; In.down.fire = false; }
+  }
+  // hover tag under the crosshair: name, what it is, how to take it
+  tagShow() {
+    const it = this.hoverItem;
+    if (!this.tag) { if (!it || typeof document === 'undefined' || !document.body) return; const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:50%;top:56%;transform:translateX(-50%);max-width:340px;padding:6px 12px;border-radius:6px;background:rgba(8,12,18,.62);color:#e8f4ff;font:600 15px/1.25 system-ui,sans-serif;text-align:center;pointer-events:none;z-index:29;display:none'; document.body.appendChild(d); this.tag = d; }
+    if (!it) { if (this.tagOn) { this.tag.style.display = 'none'; this.tagOn = false; } return; }
+    const key = it.entry.id + ':' + (it.entry.n || 1) + (this.cur ? 'c' : 'd');
+    if (this.tagKey !== key) { this.tagKey = key; this.tag.innerHTML = `${this.nameOf(it.entry)}<div style="font:400 13px system-ui;color:#b8c8d8;margin-top:2px">${describe(it.entry.id)}</div>` + (this.cur ? '' : `<div style="font:500 12px system-ui;color:#8fe8ff;margin-top:3px">${In.label('fire')} grab · ${In.label('sprint')}+${In.label('fire')} one</div>`); }
+    if (!this.tagOn) { this.tag.style.display = 'block'; this.tagOn = true; }
   }
 
   grab(c, it, one) {

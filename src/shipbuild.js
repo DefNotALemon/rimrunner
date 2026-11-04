@@ -2,6 +2,7 @@
 import * as THREE from '../vendor/three.module.js';
 import { Batch, signTex } from './interior-kit.js';
 import { rng } from './util.js';
+import { STORE, SHELF, SHELF_ROOMS, UNIT_ROOMS, makeStore, rollFor, shelfLook, shelfParts, stockShelf, shelfDecor, rotRect, makeShelfDisplay, installStorageDebug } from './storage.js';
 import { rollLoot, ROOM_LABEL, isVault } from './ships.js';
 import { WallKit, STYLE_OF_ROOM } from './wallkit.js';
 import { newShipViewports, planWindows, drawWindow } from './viewport.js';
@@ -17,12 +18,13 @@ export const CONT = {   // container kinds: size w,h,d + what the player sees in
   safe:   { w: 0.9, h: 1.1, d: 0.8, label: 'Crack the safe', locked: true },
   rack:   { w: 1.7, h: 1.3, d: 0.35, label: 'Search weapon rack' },
   drawer: { w: 0.8, h: 1.1, d: 0.6, label: 'Search cabinet' },
+  ...STORE,   // space storage (storage.js): canister, cryo, evalocker, ammocan, pod, medcab (enclosed) + pallet, toolboard, bin (open)
 };
 const ROOM_CONT = {
-  serverhall: ['drawer', 'locker'], control: ['locker', 'case'], cooling: ['crate', 'case'], power: ['crate', 'locker'], storage: ['crate', 'crate', 'case', 'locker'], crew: ['locker', 'locker', 'case'],
-  lab: ['drawer', 'case'], vault: ['safe', 'safe', 'case'], tankhall: ['crate', 'case'], chemlab: ['drawer', 'case', 'locker'], reactor: ['crate', 'case'], medbay: ['drawer', 'case'],
-  assembly: ['crate', 'case', 'crate'], foundry: ['crate', 'case'], office: ['drawer', 'locker'], armoryhall: ['rack', 'rack', 'crate', 'case'], barracks: ['locker', 'locker', 'case'],
-  guardroom: ['locker', 'rack', 'drawer'], range: ['crate', 'case'], cellblock: ['case', 'drawer'], canteen: ['crate', 'locker'], evidence: ['safe', 'drawer', 'drawer', 'locker'],
+  serverhall: ['drawer', 'locker', 'canister'], control: ['locker', 'evalocker', 'case'], cooling: ['canister', 'crate', 'toolboard'], power: ['toolboard', 'crate', 'evalocker'], storage: ['crate', 'canister', 'pallet', 'pod', 'case', 'locker'], crew: ['locker', 'pod', 'evalocker', 'case'],
+  lab: ['cryo', 'drawer', 'case'], vault: ['safe', 'safe', 'case'], tankhall: ['canister', 'pallet', 'crate'], chemlab: ['cryo', 'medcab', 'drawer', 'locker'], reactor: ['bin', 'crate', 'toolboard'], medbay: ['medcab', 'cryo', 'drawer', 'case'],
+  assembly: ['bin', 'toolboard', 'crate', 'pallet'], foundry: ['bin', 'crate', 'toolboard'], office: ['drawer', 'locker', 'case'], armoryhall: ['rack', 'ammocan', 'rack', 'crate', 'ammocan'], barracks: ['locker', 'evalocker', 'ammocan', 'case'],
+  guardroom: ['locker', 'ammocan', 'rack', 'drawer'], range: ['ammocan', 'crate', 'case'], cellblock: ['case', 'drawer', 'bin'], canteen: ['pod', 'crate', 'pallet', 'locker'], evidence: ['safe', 'drawer', 'drawer', 'locker'],
 };
 
 const mixc = (a, b, t) => new THREE.Color(a).lerp(new THREE.Color(b), t).getHex();
@@ -209,6 +211,7 @@ export function buildShip(ship, S) {
   { const tx = signTex(corp.name.toUpperCase(), 768, 130, corp.sign[0], corp.sign[1]); const bn = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 0.8), new THREE.MeshBasicMaterial({ map: tx })); bn.position.set(E / 2, 2.9, ship.gh - 0.22); bn.rotation.y = Math.PI; S.root.add(bn); }
 
   // ---------------- rooms ----------------
+  S.displays = [];   // loot in plain sight (shelves + open containers, storage.js); stash.js grabs from them
   for (const m of ship.rooms) {
     const rs = m.rs, th = m.theme, H = m.H;
     curLight = th.light; curH = m.H;
@@ -243,7 +246,16 @@ export function buildShip(ship, S) {
     const terminal = (cx, cz, face) => prop(cx, cz, 1.3, 0.8, 1.0, (x, z) => { box('metal', jit(0x2b2f36), x - 0.65, x + 0.65, 0, 0.85, z - 0.4, z + 0.4); box('metal', 0x15171a, x - 0.5, x + 0.5, 0.85, 1.5, z - 0.04, z + 0.04); box('emis', corp.accent, x - 0.44, x + 0.44, 0.92, 1.44, z + face * 0.045, z + face * 0.05); });
     const bench = (cx, cz, w = 1.8, d = 0.8, h = 0.95, c = 0x3c4046) => prop(cx, cz, w, d, h, (x, z, x0, x1, z0, z1) => { box('metal', jit(c), x0, x1, 0.7, h, z0, z1); box('matte', 0x25282d, x0 + 0.05, x1 - 0.05, 0, 0.7, z0 + 0.05, z1 - 0.05); });
     const tank = (cx, cz, rad, h, c = corp.accent) => prop(cx, cz, rad * 2, rad * 2, h, (x, z) => { cyl('metal', jit(0x7a838c), x, z, rad, 0, h); box('matte', 0x23262a, x - rad - 0.02, x + rad + 0.02, h * 0.3, h * 0.3 + 0.12, z - rad - 0.02, z + rad + 0.02); cyl('emis', new THREE.Color(c).multiplyScalar(0.7).getHex(), x, z, rad + 0.015, h * 0.55, h * 0.55 + 0.08); });
-    const shelf = (cx, cz, w, d) => prop(cx, cz, w, d, 2.0, (x, z, x0, x1, z0, z1) => { box('metal', jit(0x4a4f57), x0, x1, 0, 2.0, z0, z1); for (let y = 0.3; y < 2; y += 0.55) { box('matte', jit([0x6a5a3a, 0x3a5a6a, 0x5a3a3a][(r() * 3) | 0]), x0 + 0.08, x1 - 0.08, y, y + 0.35, z0 + 0.06, z1 - 0.06); } });
+    // loot shelves (storage.js): static batched frames, loose items lying on the tiers, grabbed straight off them
+    const look = shelfLook(m.type, th, corp), sTier = Math.min(5, ship.contract.depth);
+    const wb = (sp, b) => { const [x0, x1, z0, z1] = rotRect(sp, b[2], b[3], b[6], b[7]); box(b[0], b[1], x0, x1, b[4], b[5], z0, z1); };
+    const stock = (kind, x, z, rot, w, d, lo, hi) => { const sp = { x, z, rot, kind, w, d }, P = shelfParts(sp, look), ents = stockShelf(r, P.tiers, m.type, ship, sTier, lo, hi);
+      for (const b of P.boxes) wb(sp, b); for (const b of shelfDecor(P.tiers, ents, look, r, SHELF[kind].h)) wb(sp, b); makeShelfDisplay(S, sp, P.tiers, ents, m); };
+    const lootProp = ok => { if (ok) pend[pend.length - 1].loot = true; return ok; };
+    const shelf = (cx, cz, w, d) => lootProp(prop(cx, cz, w, d, SHELF.shelfunit.h, (x, z) => stock('shelfunit', x, z, r() < 0.5 ? 0 : Math.PI, w, d, 1, 3)));
+    const wallShelf = (w, d) => { for (let t = 0; t < 30; t++) { const side = (r() * 4) | 0, off = 0.47 + d / 2, along = side < 2, lo = (along ? m.x0 : m.z0) + 0.5 + w / 2, hi = (along ? m.x1 : m.z1) - 0.5 - w / 2; if (hi <= lo) continue;
+      const u = r.range(lo, hi), x = along ? u : side === 2 ? m.x0 + off : m.x1 - off, z = along ? (side === 0 ? m.z0 + off : m.z1 - off) : u, rot = [0, Math.PI, Math.PI / 2, -Math.PI / 2][side];
+      if (lootProp(prop(x, z, along ? w : d, along ? d : w, SHELF.wallshelf.h, () => stock('wallshelf', x, z, rot, w, d, 0, 2)))) return true; } return false; };
     const bunk = (cx, cz, w = 2.1, d = 1.0) => prop(cx, cz, w, d, 1.9, (x, z, x0, x1, z0, z1) => { box('metal', 0x2f3238, x0, x1, 0, 1.9, z0, z0 + 0.06); box('matte', jit(0x59606a), x0 + 0.05, x1 - 0.05, 0.4, 0.55, z0 + 0.06, z1 - 0.02); box('matte', jit(0x59606a), x0 + 0.05, x1 - 0.05, 1.3, 1.45, z0 + 0.06, z1 - 0.02); box('matte', 0xcfc7b4, x0 + 0.1, x0 + 0.5, 0.55, 0.65, z0 + 0.15, z1 - 0.15); });
     const machine = (cx, cz) => prop(cx, cz, 2.2, 2.2, 2.4, (x, z) => { box('metal', jit(0x4a4f57), x - 1.0, x + 1.0, 0, 0.9, z - 1.0, z + 1.0); cyl('metal', 0x7a8088, x, z, 0.35, 0.9, 2.2); cylX('metal', 0x6a7078, x, x + 1.0, 2.0, z, 0.12); box('emis', corp.accent, x + 0.9, x + 1.05, 1.9, 2.1, z - 0.1, z + 0.1); });
     const furnace = (cx, cz) => prop(cx, cz, 2.4, 2.0, 2.4, (x, z) => { box('metal', jit(0x3a2e28), x - 1.2, x + 1.2, 0, 2.4, z - 1.0, z + 1.0); box('emis', 0xff7a1a, x - 0.7, x + 0.7, 0.5, 1.3, z - 1.02, z - 0.98); box('emis', 0xff7a1a, x - 0.7, x + 0.7, 0.5, 1.3, z + 0.98, z + 1.02); S.lamps.push({ x, z, warm: true }); });
@@ -268,8 +280,8 @@ export function buildShip(ship, S) {
     for (let i = 0; i < nLoot; i++) {
       const kn = wantVault ? (i === 0 ? 'safe' : r.pick(['safe', 'case', 'drawer'])) : kinds[i % kinds.length];
       const spot = placeContainer(kn); if (!spot) continue;
-      const tier = Math.min(5, ship.contract.depth); const n = kn === 'safe' ? r.int(2, 3) : kn === 'rack' ? r.int(1, 2) : r.int(1, 2); const items = [];
-      for (let j = 0; j < n; j++) items.push(rollLoot(r, ship, wantVault || kn === 'safe', tier));
+      const tier = Math.min(5, ship.contract.depth); const n = kn === 'safe' ? r.int(2, 3) : kn === 'rack' ? r.int(1, 2) : STORE[kn] && (STORE[kn].open || kn === 'ammocan') ? r.int(1, 3) : r.int(1, 2); const items = [];
+      for (let j = 0; j < n; j++) items.push(STORE[kn] && !wantVault ? rollFor(kn, r, ship, tier) : rollLoot(r, ship, wantVault || kn === 'safe', tier));
       const c = makeContainer(S, spot, corp, items, m); S.containers.push(c); m.containers.push(c);
     }
     // furniture by room type
@@ -307,6 +319,9 @@ export function buildShip(ship, S) {
         } break;
       }
     }
+    // loot shelving along the walls, and a freestanding unit in rooms with floor to spare
+    for (let i = 0; i < (SHELF_ROOMS[m.type] || 0); i++) wallShelf(r.pick([1.2, 1.6, 1.6, 2.0]), 0.42);
+    if (UNIT_ROOMS[m.type] && m.x1 - m.x0 >= 7 && m.z1 - m.z0 >= 6) for (let t = 0; t < 12; t++) { const w = r.pick([1.2, 1.6]); if (shelf(r.range(m.x0 + 1.6, m.x1 - 1.6), r.range(m.z0 + 1.6, m.z1 - 1.6), w, 0.55)) break; }
     // per-room extras so no two rooms read the same: wall screens, ceiling ducts, pillars
     { const nScr = r.int(1, 3), scr = []; for (let i = 0; i < nScr; i++) { const back = r() < 0.5, zf = back ? m.z1 - 0.2 : m.z0 + 0.2, x = r.range(m.x0 + 1.4, m.x1 - 1.4); if (hitLane(x - 0.9, x + 0.9, zf - 0.3, zf + 0.3)) continue; if (scr.some(q => q[0] === back && Math.abs(q[1] - x) < 1.8)) continue; if (VPS.hits('x', zf, x - 0.9, x + 0.9, 0.7)) continue; scr.push([back, x]); const w = r.range(0.8, 1.6); box('metal', 0x15171a, x - w / 2 - 0.05, x + w / 2 + 0.05, 1.45, 2.05, back ? zf - 0.02 : zf - 0.02, back ? zf + 0.02 : zf + 0.02); box('emis', new THREE.Color(th.acc).multiplyScalar(r.range(0.5, 0.9)).getHex(), x - w / 2, x + w / 2, 1.5, 2.0, back ? zf - 0.04 : zf + 0.0, back ? zf - 0.0 : zf + 0.04); }
       if (r() < 0.6) { const zz = r.range(m.z0 + 1.4, m.z1 - 1.4); cylX('metal', mixc(th.dado, 0x888888, 0.4), m.x0 + 0.3, m.x1 - 0.3, H - 0.4, zz, r.range(0.1, 0.22)); if (r() < 0.5) cylX('metal', th.acc, m.x0 + 0.3, m.x1 - 0.3, H - 0.65, zz + 0.4, 0.06); }
@@ -332,6 +347,15 @@ export function buildShip(ship, S) {
       while (st.length) { const q = st.pop(), i = q % gw, j = (q / gw) | 0; for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= gw || jj >= gd) continue; const k = jj * gw + ii; if (!seen[k] && !bl[k]) { seen[k] = 1; st.push(k); } } }
       reach = seen; return pts.every(([i, j]) => seen[j * gw + i]); };
     for (let guard = 0; guard < 200 && pend.length && !flood(); guard++) { const k = (r() * pend.length) | 0, p = pend.splice(k, 1)[0]; occ.splice(occ.indexOf(p.rc), 1); }
+    // every loot spot (containers + loot shelves) must be reachable, not just the doors: drop the clutter that walls one in
+    if (m.doors.length) { const lostSet = new Set(); flood(); for (let guard = 0; guard < 40; guard++) {
+      const ringOK = (x, z, rad) => { for (let a = 0; a < 16; a++) { const i = Math.floor((x + Math.cos(a * Math.PI / 8) * rad - m.x0) / gs), j = Math.floor((z + Math.sin(a * Math.PI / 8) * rad - m.z0) / gs); if (i >= 0 && j >= 0 && i < gw && j < gd && reach[j * gw + i]) return true; } return false; };
+      const spots = [...m.containers.map(c => ({ ref: c, x: c.x, z: c.z, rad: Math.max(c.k.w, c.k.d) / 2 + 0.6 })), ...pend.filter(p => p.loot).map(p => ({ ref: p, p, x: p.cx, z: p.cz, rad: Math.max(p.rc[1] - p.rc[0], p.rc[3] - p.rc[2]) / 2 + 0.6 }))];
+      const lost = spots.find(q => !lostSet.has(q.ref) && !ringOK(q.x, q.z, q.rad)); if (!lost) break;
+      let drop = lost.p; if (!drop) { let bd = 3.2; for (const p of pend) { const dd = Math.hypot(p.cx - lost.x, p.cz - lost.z); if (dd < bd) { bd = dd; drop = p; } } }
+      if (!drop) { lostSet.add(lost.ref); continue; }
+      pend.splice(pend.indexOf(drop), 1); occ.splice(occ.indexOf(drop.rc), 1); flood();
+    } }
     for (const p of pend) { if (p.h) col(p.rc[0], p.rc[1], p.rc[2], p.rc[3], p.h); p.draw && p.draw(p.cx, p.cz, p.rc[0], p.rc[1], p.rc[2], p.rc[3]); }
     flood();
     m.spots = []; for (let t = 0; t < 160 && m.spots.length < 8; t++) { const x = r.range(m.x0 + 1.0, m.x1 - 1.0), z = r.range(m.z0 + 1.0, m.z1 - 1.0); if (isFree(x - 0.4, x + 0.4, z - 0.4, z + 0.4, 0.2) && reach && reach[Math.floor((z - m.z0) / gs) * gw + Math.floor((x - m.x0) / gs)]) m.spots.push({ x, z }); }
@@ -347,9 +371,11 @@ export function buildShip(ship, S) {
   }
   // stashes tucked at the dead ends of ribs: the reward for going the long way round
   for (const st of ship.stashes) {
-    const kn = r.pick(['case', 'crate', 'locker']), k = CONT[kn], tier = Math.min(5, ship.contract.depth), items = []; for (let j = 0; j < r.int(1, 2); j++) items.push(rollLoot(r, ship, false, tier));
+    if (ship.doors.some(d => Math.abs((d.axis === 'x' ? st.z : st.x) - d.at) < 1.3 && Math.abs((d.axis === 'x' ? st.x : st.z) - d.u) < d.w / 2 + 0.6)) continue;   // never in front of a doorway
+    const kn = r.pick(['case', 'crate', 'locker', 'canister', 'ammocan']), k = CONT[kn], tier = Math.min(5, ship.contract.depth), items = []; for (let j = 0; j < r.int(1, 2); j++) items.push(STORE[kn] ? rollFor(kn, r, ship, tier) : rollLoot(r, ship, false, tier));
     const c = makeContainer(S, { x: st.x, z: st.z, rot: st.rot, k, kindName: kn }, corp, items, null); S.containers.push(c);
   }
+  installStorageDebug(S);
   bt.flush(S.root);
   kit.flush(S.root);
   VPS.flush(S.root, winEnv);
@@ -358,6 +384,7 @@ export function buildShip(ship, S) {
 const _mats = {};
 const cm = (k, f) => _mats[k] || (_mats[k] = f());
 export function makeContainer(S, spot, corp, items, room) {
+  if (STORE[spot.kindName]) return makeStore(S, spot, corp, items, room);   // space storage kinds have their own builders + rigs
   const { x, z, rot, k, kindName } = spot; const g = new THREE.Group();
   const bodyCol = kindName === 'safe' ? 0x31353c : kindName === 'crate' ? 0x6b5a3c : new THREE.Color(corp.trim).multiplyScalar(0.55).getHex();
   const body = cm('b' + kindName + corp.short, () => new THREE.MeshStandardMaterial({ color: bodyCol, metalness: kindName === 'crate' ? 0.1 : 0.6, roughness: 0.5 }));
