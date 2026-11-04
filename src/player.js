@@ -11,7 +11,7 @@ import { sfx } from './audio.js';
 
 // Space Ranger constants (Walk.cs / Character.Stance.cs)
 const WALK = 4.38, SPRINT = 5.04, WALK_GO = 14, WALK_STOP = 14, JUMP_V = 3.8, GRAV = 9.8, CROUCH_MUL = 0.5, CROUCH_EASE = 0.25;
-const EYE = 1.65, EYE_CROUCH = EYE * 0.65;
+const EYE = 1.65;   // fallback only: the live eye height comes from the body (eyeH)
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 
 export class Player {
@@ -129,8 +129,8 @@ export class Player {
     // ------------- survival -------------
     this.updateSurvival(dt, surf, speed);
     // ------------- camera & body -------------
+    this.updateBody(dt, speed);     // body first: the first-person lens rides the animated head's eyes, so it can never sit inside the torso
     this.updateCamera(dt, speed, mv);
-    this.updateBody(dt, speed);
     this.hurtT = Math.max(0, this.hurtT - dt);
   }
 
@@ -157,7 +157,7 @@ export class Player {
 
   updateFocusTarget(ctx) {
     const f = this.camForward(); let best = null, bs = 0.9;
-    const eye = V(this.pos.x, this.pos.y + EYE, this.pos.z);
+    const eye = V(this.pos.x, this.pos.y + (this.eyeH ?? EYE), this.pos.z);
     for (const n of ctx.npcs) {
       if (n.dead || n.customer) continue; const to = V(n.pos.x, n.pos.y + 1.4, n.pos.z).sub(eye); const d = to.length(); if (d > 14) continue; to.normalize();
       const s = to.dot(f) - d * 0.004; if (s > bs) { bs = s; best = n; }
@@ -208,7 +208,7 @@ export class Player {
       const f = V(0, 0, -1).applyQuaternion(cam.quaternion), range = 70;
       const hitC = this.rayWorld(cam.position, f, range, 0.6, 0.6);
       const target = cam.position.clone().addScaledVector(f, hitC);
-      const origin = V(this.pos.x, this.pos.y + EYE - 0.05, this.pos.z), dir = target.clone().sub(origin); const dl = dir.length();
+      const origin = V(this.pos.x, this.pos.y + (this.eyeH ?? EYE) - 0.05, this.pos.z), dir = target.clone().sub(origin); const dl = dir.length();
       if (dl > 0.5) {
         dir.divideScalar(dl); this.aimDir = dir;
         const wd = this.rayWorld(origin, dir, dl, 0.6); const land = origin.clone().addScaledVector(dir, Math.min(dl, wd));
@@ -217,6 +217,13 @@ export class Player {
       }
     }
     const k = 1 - Math.exp(-22 * dt); this.xh.x += (tx - this.xh.x) * k; this.xh.y += (ty - this.xh.y) * k;
+  }
+  // midpoint of the body's eyes in head-joint space (quick body: face.eye, realistic avatar: face.eyes); cached per body
+  eyeLocal() {
+    const b = this.body, U = b.userData; if (U._eyeL) return U._eyeL;
+    const J = U.J, list = U.face && (U.face.eyes || U.face.eye), v = V(0, 0.1, -0.087);
+    if (list && list.length) { b.updateMatrixWorld(true); const inv = J.head.matrixWorld.clone().invert(); v.set(0, 0, 0); for (const g of list) v.add(V().setFromMatrixPosition(g.matrixWorld).applyMatrix4(inv)); v.divideScalar(list.length); v.x = 0; U._eyeL = v; }   // cache once the face exists (the avatar attaches it after build)
+    return v;
   }
   camForward() { return V(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, 'YXZ')); }
 
@@ -241,7 +248,7 @@ export class Player {
   shoot(g, spec, ctx) {
     this.fireCd = spec.rate; g.mag--; this.gunUpT = 2.5; this.recoil = Math.min(1.6, this.recoil + 0.5 + spec.pellets * 0.04); this.pitch += 0.012 * (1 + spec.pellets * 0.08) * (1 - this.aim * 0.4); this.yaw += (Math.random() - 0.5) * 0.004; this.muzzle = 1;
     sfx(spec.pellets > 4 ? 'shotgun' : g.id === 'rifle' ? 'rifle' : (g.id === 'arc' || g.id.startsWith('pulse') || g.id === 'scatter' || g.id === 'railrifle') ? 'laser' : 'shot', 1);
-    const origin = V(this.pos.x, this.pos.y + EYE - 0.05, this.pos.z);
+    const origin = V(this.pos.x, this.pos.y + (this.eyeH ?? EYE) - 0.05, this.pos.z);
     const dmgMul = (g.q || 1) * (1 + 0.04 * lvl('gunsmith'));
     for (let i = 0; i < spec.pellets; i++) {
       const sp = spec.spread * (1 - this.aim * 0.55) * (this.crouch ? 0.8 : 1) * (1 + Math.min(1, Math.hypot(this.vel.x, this.vel.z) / 5));
@@ -278,7 +285,7 @@ export class Player {
   }
 
   mine(dt, ctx) {
-    const o = V(this.pos.x, this.pos.y + EYE, this.pos.z), f = this.camForward(); let best = null, bd = 9;
+    const o = V(this.pos.x, this.pos.y + (this.eyeH ?? EYE), this.pos.z), f = this.camForward(); let best = null, bd = 9;
     for (const nd of ctx.surf.nodes) {
       if (!nd.alive) continue; const to = nd.pos.clone().sub(o); const t = to.dot(f); if (t < 0.4 || t > 8) continue;
       const cl = o.clone().addScaledVector(f, t); if (cl.distanceTo(nd.pos) < 0.9 * nd.size + 0.3 && t < bd) { bd = t; best = nd; }
@@ -332,28 +339,32 @@ export class Player {
     const feet = this.onGround; const want = feet ? clamp(speed / SPRINT, 0, 1.2) : 0; this.bobAmt = damp(this.bobAmt, want, want > this.bobAmt ? 6 : 9, dt);
     const p = Math.PI * 2 * this.gait; const boots = lerp(1, 0.6, this.crouchBlend) * (1 - this.aim * 0.6);
     const vAmp = lerp(0.007, 0.024, clamp(this.bobAmt, 0, 1)) * Math.min(1, this.bobAmt * 4) * boots, hAmp = lerp(0.009, 0.006, clamp(this.bobAmt, 0, 1)) * Math.min(1, this.bobAmt * 4) * boots;
-    let eye = lerp(EYE, EYE_CROUCH, this.crouchBlend) - vAmp * Math.cos(2 * p); let side = hAmp * Math.sin(p);
+    const side = hAmp * Math.sin(p);
     let roll = Math.sin(p) * 0.45 * Math.min(1, this.bobAmt * 3) * boots * 0.0175 * 1.0;
     let pitch = Math.cos(2 * p) * 0.18 * this.bobAmt * boots * 0.0175;
     const lateral = (this.vel.x * Math.cos(this.yaw) - this.vel.z * Math.sin(this.yaw)) / SPRINT; this.strafeLean = damp(this.strafeLean, -lateral * 2.2, 7, dt); roll += this.strafeLean * 0.0175;
     // landing spring
-    this.landDipV += (-140 * this.landDip - 17 * this.landDipV) * dt; this.landDip = clamp(this.landDip + this.landDipV * dt, -0.14, 0.05); eye += this.landDip; pitch += this.landDip * 9 * 0.0175;
+    this.landDipV += (-140 * this.landDip - 17 * this.landDipV) * dt; this.landDip = clamp(this.landDip + this.landDipV * dt, -0.14, 0.05); pitch += this.landDip * 9 * 0.0175;
     // breathing + immersive weight: slow figure-eight when still
-    const br = Math.sin(G.time * 1.6) * 0.004 * (1 - this.bobAmt); eye += br;
-    // leaning: shift the head toward the wall, roll away
-    let ox = 0, oz = 0, lr = 0, lp = 0;
-    if (this.lean > 0.01) {
-      const L = this.lean; const d = this.leanDir; const k = { ahead: 0.0, left: 0.22, right: 0.22, back: 0.0 }[this.leanKind] ?? 0.2;
-      ox = d.x * k * L; oz = d.z * k * L;
-      if (this.leanKind === 'left') lr = -0.1 * L; else if (this.leanKind === 'right') lr = 0.1 * L;
-      if (this.leanKind === 'ahead') { lp = -0.1 * L; eye -= 0.05 * L; ox = d.x * 0.1 * L; oz = d.z * 0.1 * L; } if (this.leanKind === 'back') { eye -= 0.08 * L; lp = 0.09 * L; }
-      eye -= 0.04 * L;
-    }
-    // packOpen: dip the view toward the bag
-    this.pitchOff = -this.packT * 0.95; eye -= this.packT * 0.62;
+    const br = Math.sin(G.time * 1.6) * 0.004 * (1 - this.bobAmt);
+    // leaning: the body leans into the wall (updateBody) and the lens rides its head; the view only rolls/pitches here
+    let lr = 0, lp = 0;
+    if (this.lean > 0.01) { const L = this.lean; if (this.leanKind === 'left') lr = -0.1 * L; else if (this.leanKind === 'right') lr = 0.1 * L; else if (this.leanKind === 'ahead') lp = -0.1 * L; else if (this.leanKind === 'back') lp = 0.09 * L; }
+    // packOpen: the body kneels to the bag (updateBody) and the view dips toward it
+    this.pitchOff = -this.packT * 0.95;
     const fovBase = 75; const wantFov = fovBase - this.aim * 22 - this.focus * 18 + (this.sprinting ? 5 : 0); this.fov = damp(this.fov, wantFov, 10, dt);
-    const forward = V(0, 0, -1).applyAxisAngle(V(0, 1, 0), this.yaw);
-    const e = V(this.pos.x, this.pos.y + eye, this.pos.z).addScaledVector(forward, 0.1 + (this.crouchBlend * 0.04)).add(V(Math.cos(this.yaw) * side + ox, 0, -Math.sin(this.yaw) * side + oz));
+    // first-person lens rides the animated body's eyes (head + face are hidden in first person): running, leaning, crouching,
+    // kneeling to the bag and looking down move the view WITH the body, so the lens never sits inside the neck, collar or chest.
+    // The eye point is smoothed relative to the feet (the hips' stride bounce would shake the view); the authored Space Ranger
+    // bob, sway and roll ride on top.
+    const J = this.body.userData.J; this.body.updateMatrixWorld(true);
+    const dn = clamp(-(this.pitch + this.pitchOff), 0, 1.6);   // looking down, the eyes lead the chin: you see your chest from a natural distance, not your own neck
+    const raw = this.eyeLocal().clone().add(V(0, 0, -0.07 - 0.04 * dn)).applyMatrix4(J.head.matrixWorld).sub(this.pos);
+    if (!this.lensRel || this.lensRel.distanceTo(raw) > 1.2) this.lensRel = raw.clone();
+    else { const kh = 1 - Math.exp(-16 * dt), kv = 1 - Math.exp(-3 * dt); this.lensRel.x += (raw.x - this.lensRel.x) * kh; this.lensRel.z += (raw.z - this.lensRel.z) * kh; this.lensRel.y += (raw.y - this.lensRel.y) * kv; this.lensRel.y = clamp(this.lensRel.y, raw.y - 0.12, raw.y + 0.2); }   // bounded lag: the collar/neck can never rise to the lens
+    const bobV = -vAmp * Math.cos(2 * p) + br;
+    const e = this.pos.clone().add(this.lensRel).add(V(Math.cos(this.yaw) * side, bobV, -Math.sin(this.yaw) * side));
+    this.eyeH = e.y - this.pos.y;
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(this.pitch + this.pitchOff + pitch + lp - this.recoil * 0.035, this.yaw, roll + lr, 'YXZ'));
     // third-person: V toggles an over-the-back orbit that eases in/out (no snap), tightens to an over-the-shoulder view when aiming,
     // and pulls in so it always fits the room (walls + ceiling) you are standing in.
@@ -447,7 +458,7 @@ export class Player {
     const gun = G.hand; let arms = 'relaxed'; if (gun) arms = this.gunUp > 0.5 ? 'gun' : 'lowgun'; else if (this.leaning) arms = 'wallhands';
     const fy = -Math.sin(this.bodyYaw), fz = -Math.cos(this.bodyYaw), vf = this.vel.x * fy + this.vel.z * fz, vr = this.vel.x * -fz + this.vel.z * fy;   // velocity in body space: strafe / backpedal animation
     let hy = this.yaw - this.bodyYaw; while (hy > Math.PI) hy -= 6.283; while (hy < -Math.PI) hy += 6.283;
-    animateHuman(b, { dt, v: speed, speed: speed / 4.4, crouch: this.crouchBlend, arms, aim: this.gunUp, pitch: -this.pitch * 0.7, idleT: G.time, look: clamp(this.pitch, -1.5, 0.8), headYaw: hy,   // camera pitch (+ = up): looking down tips the head forward (chin to chest) so it never swings back through the body
+    animateHuman(b, { dt, v: speed, speed: speed / 4.4, crouch: Math.max(this.crouchBlend, this.packT), arms, aim: this.gunUp, pitch: -this.pitch * 0.7, idleT: G.time, look: clamp(this.pitch, -1.5, 0.8), headYaw: hy,   // camera pitch (+ = up): looking down tips the head forward (chin to chest) so it never swings back through the body
       strafe: speed > 0.3 ? Math.max(-1, Math.min(1, vr / speed)) : 0, back: speed > 0.3 && vf < -0.35 * speed, air: !this.onGround, vy: this.vel.y });
     const fx = b.userData.fx; if (fx) { this.pack3.rotation.x = fx.pack; this.pack3.position.y += fx.bounce; }
     if (this.beam.visible && !gun) { J.armR.rotation.x = 1.3; J.elbowR.rotation.x = 0.3; }
