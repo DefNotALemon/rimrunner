@@ -74,7 +74,11 @@ export class Player {
     if (wantAim && G.held && !G.hand) { const left = addItem(G.held.id, G.held.n || 1); G.held = left ? { ...G.held, n: left } : null; }   // aiming puts what you're holding away
     if (wantAim && !G.hand && !this.reloading) { if (quickPull()) { sfx('zip', 0.6); this.holsterT = 0; } }
     this.aim = damp(this.aim, wantAim && G.hand ? 1 : 0, 12, dt);
-    if (G.quickDrawn && G.hand && !wantAim && !In.down.fire) { this.holsterT += dt; if (this.holsterT > 3) { stowHand(); sfx('zip', 0.4); } } else if (wantAim) this.holsterT = 0;
+    // in a fight the gun stays out: no auto-holster while anything is still after you (extraction enemies hunting you,
+    // hostile cops); the 3 s countdown starts only once they're all dead or gone (extracted / died)
+    this.inCombat = !this.dead && (ctx.npcs || []).some(n => !n.dead && !n.crew && !(n.def && n.def.survivor) && (n.hostile || (n.state === 'hunt' && !n.neutral)));
+    if (this.inCombat) this.holsterT = 0;
+    else if (G.quickDrawn && G.hand && !wantAim && !In.down.fire) { this.holsterT += dt; if (this.holsterT > 3) { stowHand(); sfx('zip', 0.4); } } else if (wantAim) this.holsterT = 0;
     if (hasInput && In.pressed.holster && G.held) { const left = addItem(G.held.id, G.held.n || 1); G.held = left ? { ...G.held, n: left } : null; sfx('zip', 0.4); }
     else if (hasInput && In.pressed.holster) { if (G.hand) { stowHand(); sfx('zip', 0.5); } else if (quickPull()) sfx('zip', 0.5); }
     if (hasInput && In.pressed.view) this.thirdPerson = !this.thirdPerson;
