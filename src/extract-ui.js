@@ -6,6 +6,7 @@ import { sfx } from './audio.js';
 import { fmt } from './util.js';
 import { CORPS, CLASSES, ROOM_LABEL } from './ships.js';
 import { Meta, metaSave, metaLoad, metaReset, makeOffers, packValue, startingKit, ARMOR, SHOP_GUNS, SHOP_KIT } from './extract.js';
+import { talk as talkTo } from './crew.js';
 
 const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const mmss = s => { s = Math.max(0, Math.ceil(s)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -107,6 +108,7 @@ export class Extraction {
       case 'xmedic': G.hp = 100; S.stunT = 0; toast('Patched up. Back to work.', 'good'); sfx('good', 0.8); break;
       case 'xloot': this.loot(it.data, it); break;
       case 'xsalvage': this.salvage(it.data, it); break;
+      case 'xcrew': this.talk(it.data); break;
       case 'xvault': this.vault(it.data, it); break;
     }
   }
@@ -124,8 +126,14 @@ export class Extraction {
   }
   salvage(e, it) {
     const { S } = this; if (e.salv.opened) return; const sv = e.salv;
+    if (sv.note && !sv.noted) { sv.noted = true; toast(sv.note, ''); }
     S.exposeInnards(e); if (!sv.entries) sv.entries = this.entriesOf(sv.ids);
     this.openTray(it.label, sv.entries, rest => { sv.entries = rest; if (!rest.length) { sv.opened = true; S.interactables = S.interactables.filter(x => x !== it); } });
+  }
+  talk(e) {
+    const { S } = this; const t = talkTo(S, e); if (!t) return;
+    toast(`${e.def.name}: "${t.say}"`, 'good');
+    if (t.give && !e.gave) { e.gave = true; const ent = this.entriesOf([t.give]); this.openTray(`${e.def.name} hands you something`, ent, () => {}); }
   }
   vault(vd, it) {
     const { S, app } = this; if (vd.open) return;

@@ -9,6 +9,7 @@ import { buildShip, makeContainer, CONT } from './shipbuild.js';
 import { buildHuman, makeLook, OUTFITS, animateHuman } from './people.js';
 import { sfx } from './audio.js';
 import { Nav } from './nav.js';
+import { populateCrew, updateSurvivor, cullCrew } from './crew.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 export const ARMOR = [{ n: 'No armor', red: 0, cost: 0 }, { n: 'Weave vest', red: 0.2, cost: 450 }, { n: 'Plated vest', red: 0.38, cost: 1400 }, { n: 'Combat rig', red: 0.55, cost: 3400 }];
@@ -103,7 +104,7 @@ export class ExtractShip extends Surface {
     // navigation
     this.nav = new Nav(-9, ship.zlo - 9, ship.W + 9, ship.zhi + 9); this.rebuildNav();
     this.mine = ship.ports[0]; this.spawn = { x: -3.4, z: this.mine.z, yaw: -Math.PI / 2 };
-    this.buildEvents(); this.populate();
+    this.buildEvents(); this.populate(); populateCrew(this);
     // my ship's airlock: console + hatch
     const px = -5.4; this.interactables.push({ pos: V(px, 1, this.mine.z + 1.9), r: 2.2, label: 'Ship AI console — call a medic', act: 'xconsole' }, { pos: V(-6.1, 1, this.mine.z), r: 2.0, label: 'Hatch — undock and extract', act: 'xextract' });
     const con = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 0.5), MAT(0x2b3038)); con.position.set(px, 0.6, this.mine.z + 2.3); this.root.add(con); const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.5), new THREE.MeshBasicMaterial({ color: 0x55ffcc })); scr.position.set(px, 1.0, this.mine.z + 2.04); scr.rotation.y = Math.PI; this.root.add(scr);
@@ -155,6 +156,7 @@ export class ExtractShip extends Surface {
     if (e.hp <= 0) this.killEnemy(e);
   }
   killEnemy(e) {
+    if (e.talkIt) { this.interactables = this.interactables.filter(x => x !== e.talkIt); toast('You shot a survivor.', 'warn'); }
     e.dead = true; this.kills++; e.dieT = 0; e.settled = false; sfx('good', 0.6);
     const r = this.r, human = e.def.human; const pool = human ? ['ammo', 'ammo', 'medkit', 'stimpack', r() < 0.12 ? 'pulsepistol' : 'hpistol'] : ['servo', 'cell', 'circuit', 'servo', r() < 0.15 ? 'ai_core' : 'cell'];
     const ids = [r.pick(pool)]; if (r() < 0.4) ids.push(r.pick(pool));
@@ -192,6 +194,7 @@ export class ExtractShip extends Surface {
     this.t += dt; this.stunT = Math.max(0, this.stunT - dt); G.hunger = G.thirst = 35; G.oxygen = 100;
     this.lampT -= dt; if (this.lampT <= 0) { this.lampT = 0.12; this.placeLights(player.pos); }
     for (const e of this.enemies) if (!e.dead) this.updateEnemy(e, dt, player);
+    this._cullT = (this._cullT || 0) - dt; if (this._cullT <= 0) { this._cullT = 0.5; cullCrew(this, player.pos); }
     for (const e of this.enemies) if (e.dead && e.mesh && !e.settled) this.deadAnim(e, dt);
     for (const p of this.proj) { p.life -= dt; p.m.position.addScaledVector(p.vel, dt); const px = p.m.position.x, pz = p.m.position.z; let hitW = false; for (const c of this.colliders) { if (px > c.minx && px < c.maxx && pz > c.minz && pz < c.maxz && p.m.position.y < (c.maxy ?? 9)) { hitW = true; break; } }
       const dp = Math.hypot(px - player.pos.x, p.m.position.y - (player.pos.y + 1), pz - player.pos.z); if (hitW || dp < 0.7 || p.life <= 0) { this.boom(p.m.position.clone(), p.splash, p.dmg, player); this.root.remove(p.m); p.dead = true; } }
@@ -253,6 +256,7 @@ export class ExtractShip extends Surface {
     sfx('zip', 0.9);
   }
   updateEnemy(e, dt, player) {
+    if (e.def.survivor) return updateSurvivor(this, e, dt, player);
     const d0 = e.def, w = d0.weapon, px = player.pos.x, pz = player.pos.z, dx = px - e.pos.x, dz = pz - e.pos.z, d = Math.hypot(dx, dz); e.t += dt;
     if ((e.state === 'idle' || e.state === 'roam') && !e.alerted && d > d0.sight + 6) { if (e.state === 'idle') return; }
     const los = d < 70 && this.los(e.pos, player.pos);
