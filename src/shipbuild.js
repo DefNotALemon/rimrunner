@@ -74,6 +74,7 @@ export function buildShip(ship, S) {
     m.rs = rs; m.theme = { wall: sh(mixc(rs.wall, corp.wall, 0.3)), dado: sh(mixc(rs.dado, corp.dado, 0.3)), floor: sh(mixc(rs.floor, corp.floor2, 0.25)), acc: mixc(rs.acc, corp.accent, 0.25), light: mixc(rs.light, corp.light, 0.25) };
   }
   // wall helper: axis 'x' = runs along x at fixed z=at; axis 'z' = runs along z at fixed x=at. gaps [[centre,width,arch],...]
+  let kitScale = 1;   // wall-kit detail budget: huge hulls get fewer props and plain corridor walls so the static mesh stays ~1 M vertices
   const posts = new Map();   // wall vertices -> {x: has an x-run end, z: has a z-run end, t, h}
   const vert = (axis, at, s, t, hh) => { const x = axis === 'x' ? s : at, z = axis === 'x' ? at : s, k = x + ',' + z; const p = posts.get(k) || posts.set(k, { x, z, ax: false, az: false, t: 0, h: 0 }).get(k); if (axis === 'x') p.ax = true; else p.az = true; p.t = Math.max(p.t, t); p.h = Math.max(p.h, hh); };
   function wallRun(run) {
@@ -100,9 +101,10 @@ export function buildShip(ship, S) {
     for (const [o, sgn] of [[o1, -1], [o2, 1]]) { if (o < 0) continue; const m = roomOf(o), kd = owners[o].kind;
       let style = m ? (STYLE_OF_ROOM[m.type] || 'corp') : kd === 'duct' ? 'duct' : (corp.short.charCodeAt(0) & 1) ? 'industrial' : 'corp';
       if (!m && kd !== 'duct' && r() < 0.08 + 0.04 * dep) style = 'derelict'; else if (m && r() < 0.04 * dep) style = 'derelict';
+      if (!m && kitScale < 0.6 && style !== 'duct') style = 'lite';
       const off = m ? t / 2 + 0.03 : t / 2 + 0.02, th = m ? m.theme : { wall: corp.wall, dado: corp.dado, acc: corp.accent };
       const fc = axis === 'x' ? kit.face(0, at + sgn * off, 0, sgn, 1, 0) : kit.face(at + sgn * off, 0, sgn, 0, 0, 1);
-      dsides.push({ f: fc, style, top: m ? Math.min(m.H, hh) : Math.min(owners[o].H, hh), th, dmg: style === 'derelict' ? 0.22 : dmgBase, dens: style === 'server' ? 1 : style === 'derelict' ? 0.75 : 0.62 }); }
+      dsides.push({ f: fc, style, top: m ? Math.min(m.H, hh) : Math.min(owners[o].H, hh), th, dmg: style === 'derelict' ? 0.22 : dmgBase, dens: (style === 'server' ? 1 : style === 'derelict' ? 0.75 : 0.62) * Math.min(1, kitScale * 1.2) }); }
     const dressSeg = (s0, s1) => { for (const d of dsides) { let rs = [[s0, s1]]; if (hull) for (const v of vps) { const lo = v.cc - v.w / 2 - 0.3, hi = v.cc + v.w / 2 + 0.3; rs = rs.flatMap(([x0, x1]) => x1 <= lo || x0 >= hi ? [[x0, x1]] : [[x0, Math.min(x1, lo)], [Math.max(x0, hi), x1]]); }
       for (const [x0, x1] of rs) if (x1 - x0 > 0.6) kit.dress(d.f, x0, x1, { style: d.style, top: d.top, wall: d.th.wall, dado: d.th.dado, acc: d.th.acc, dmg: d.dmg, dens: d.dens }); } };
     const sides = [];   // painted faces: room interiors get their own dado / wall / accent
@@ -137,6 +139,7 @@ export function buildShip(ship, S) {
       for (let s = 0; s < 7; s++) { const sx = cc + r.range(-w / 2 + 0.1, w / 2 - 0.1), sy = r.range(1.4, 2.3); bx('emis', r() < 0.2 ? 0xffd9a0 : 0xcfe0ff, sx, sx + 0.05, sy, sy + 0.05, sgn < 0 ? g0 - 0.01 : g1, sgn < 0 ? g0 : g1 + 0.01); }
     }
   }
+  { let len = 0; for (const rn of ship.runs) len += (rn.b - rn.a) * ((rn.o1 >= 0) + (rn.o2 >= 0)); kitScale = Math.min(1, 1.15e6 / (len * 330)); }
   for (const run of ship.runs) wallRun(run);
   for (const p of posts.values()) if (p.ax && p.az) { const s = p.t + 0.08; box('matte', corp.wall, p.x - s / 2, p.x + s / 2, 0, p.h, p.z - s / 2, p.z + s / 2); }
   // floors + ceilings of everything that isn't a room (corridors, plazas, ducts)
