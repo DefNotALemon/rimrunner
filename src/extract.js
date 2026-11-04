@@ -6,7 +6,7 @@ import { ITEMS, GUN } from './data.js';
 import { rng, clamp } from './util.js';
 import { generateShip, pickContract, classesFor, CLASSES, CORPS, isVault, ROOM_LABEL } from './ships.js';
 import { buildShip, makeContainer, CONT } from './shipbuild.js';
-import { buildHuman, makeLook, OUTFITS, animateHuman } from './people.js';
+import { buildHuman, makeLook, OUTFITS, animateHuman, hitReact } from './people.js';
 import { sfx } from './audio.js';
 import { Nav } from './nav.js';
 import { populateCrew, updateSurvivor, cullCrew } from './crew.js';
@@ -66,25 +66,29 @@ function boardMat() {
 }
 const MAT = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, metalness: 0.65, roughness: 0.4, ...o });
 function droneMesh(d) {
-  const g = new THREE.Group(), body = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 10), MAT(d.color)); body.position.y = 1.0; body.scale.set(1, 0.75, 1.1); g.add(body); g.userData.body = body;
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.03, 6, 20), new THREE.MeshBasicMaterial({ color: d.glow })); ring.rotation.x = Math.PI / 2; ring.position.y = 1.0; g.add(ring); g.userData.ring = ring;
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: d.glow })); eye.position.set(0, 1.0, -0.28); g.add(eye);
+  const g = new THREE.Group(), core = new THREE.Group(); core.position.y = 1.0; g.add(core); g.userData.core = core;   // everything rides in `core` so the drone can pitch/roll/scan as one servo-driven unit
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 10), MAT(d.color)); body.scale.set(1, 0.75, 1.1); core.add(body); g.userData.body = body;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.03, 6, 20), new THREE.MeshBasicMaterial({ color: d.glow })); ring.rotation.x = Math.PI / 2; core.add(ring); g.userData.ring = ring;
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: d.glow })); eye.position.set(0, 0, -0.28); core.add(eye); g.userData.eye = eye;
   g.userData.rotors = [];
-  for (const [x, z] of [[0.38, 0.38], [-0.38, 0.38], [0.38, -0.38], [-0.38, -0.38]]) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.015, 12), new THREE.MeshBasicMaterial({ color: 0x9fb4c8, transparent: true, opacity: 0.45 })); r.position.set(x, 1.12, z); g.add(r); g.userData.rotors.push(r); }
-  for (const x of [-0.06, 0.06]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.22), MAT(0x333840)); p.position.set(x, 0.9, -0.36); g.add(p); }
+  for (const [x, z] of [[0.38, 0.38], [-0.38, 0.38], [0.38, -0.38], [-0.38, -0.38]]) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.015, 12), new THREE.MeshBasicMaterial({ color: 0x9fb4c8, transparent: true, opacity: 0.45 })); r.position.set(x, 0.12, z); core.add(r); g.userData.rotors.push(r); }
+  g.userData.prongs = [-0.06, 0.06].map(x => { const p = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.02, 0.22), MAT(0x333840)); p.position.set(x, -0.1, -0.36); core.add(p); return p; });
   return g;
 }
 function walkerMesh(d) {
   const g = new THREE.Group(), s = d.size || 1, body = MAT(d.color), dark = MAT(0x22252a), glow = new THREE.MeshBasicMaterial({ color: d.glow });
   const add = (geo, m, x, y, z, parent = g) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = false; parent.add(o); return o; };
-  add(new THREE.BoxGeometry(0.72, 0.82, 0.44), body, 0, 1.3, 0); add(new THREE.BoxGeometry(0.5, 0.3, 0.3), dark, 0, 0.82, 0);
-  add(new THREE.BoxGeometry(0.34, 0.28, 0.32), body, 0, 1.92, 0); add(new THREE.BoxGeometry(0.26, 0.07, 0.04), glow, 0, 1.94, -0.17);
+  const up = new THREE.Group(); up.position.y = 0.82; g.add(up); g.userData.up = up;   // torso, head and arms pivot at the hips: they twist, lean and recoil as a unit
+  const U = (geo, m, x, y, z, parent = up) => add(geo, m, x, y - 0.82, z, parent);
+  U(new THREE.BoxGeometry(0.72, 0.82, 0.44), body, 0, 1.3, 0); add(new THREE.BoxGeometry(0.5, 0.3, 0.3), dark, 0, 0.82, 0);
+  const head = new THREE.Group(); head.position.set(0, 1.92 - 0.82, 0); up.add(head); g.userData.head = head;
+  add(new THREE.BoxGeometry(0.34, 0.28, 0.32), body, 0, 0, 0, head); add(new THREE.BoxGeometry(0.26, 0.07, 0.04), glow, 0, 0.02, -0.17, head); g.userData.visor = head.children[1];
   g.userData.legs = [-1, 1].map(sx => { const l = new THREE.Group(); l.position.set(sx * 0.2, 0.82, 0); add(new THREE.BoxGeometry(0.2, 0.84, 0.22), dark, 0, -0.42, 0, l); g.add(l); return l; });
-  const arm = new THREE.Group(); arm.position.set(0.5, 1.55, 0); g.add(arm); add(new THREE.BoxGeometry(0.16, 0.5, 0.16), dark, 0, -0.2, 0, arm); g.userData.arm = arm;
+  const arm = new THREE.Group(); arm.position.set(0.5, 1.55 - 0.82, 0); up.add(arm); add(new THREE.BoxGeometry(0.16, 0.5, 0.16), dark, 0, -0.2, 0, arm); g.userData.arm = arm;
   const w = d.weapon;
-  if (w.kind === 'rocket') { const tube = add(new THREE.CylinderGeometry(0.12, 0.12, 0.8, 10), MAT(0x3a3f46), -0.44, 2.0, 0.0); tube.rotation.x = Math.PI / 2; add(new THREE.SphereGeometry(0.08, 8, 6), glow, -0.44, 2.0, -0.42); }
-  const gun = add(new THREE.BoxGeometry(0.09, 0.09, d.name.startsWith('LMG') ? 0.95 : 0.7), dark, 0.5, 1.2, -0.45); if (d.name.startsWith('LMG')) add(new THREE.CylinderGeometry(0.14, 0.14, 0.12, 10), MAT(0x57504a), 0.5, 1.1, -0.2).rotation.z = Math.PI / 2; void gun;
-  if (d.name === 'Wristgun Runner') add(new THREE.BoxGeometry(0.1, 0.1, 0.26), glow, -0.5, 1.15, -0.2);
+  if (w.kind === 'rocket') { const tube = U(new THREE.CylinderGeometry(0.12, 0.12, 0.8, 10), MAT(0x3a3f46), -0.44, 2.0, 0.0); tube.rotation.x = Math.PI / 2; U(new THREE.SphereGeometry(0.08, 8, 6), glow, -0.44, 2.0, -0.42); }
+  const gun = U(new THREE.BoxGeometry(0.09, 0.09, d.name.startsWith('LMG') ? 0.95 : 0.7), dark, 0.5, 1.2, -0.45); if (d.name.startsWith('LMG')) U(new THREE.CylinderGeometry(0.14, 0.14, 0.12, 10), MAT(0x57504a), 0.5, 1.1, -0.2).rotation.z = Math.PI / 2; void gun;
+  if (d.name === 'Wristgun Runner') U(new THREE.BoxGeometry(0.1, 0.1, 0.26), glow, -0.5, 1.15, -0.2);
   g.scale.setScalar(s); return g;
 }
 
@@ -152,7 +156,7 @@ export class ExtractShip extends Surface {
   hitEnemy(e, dmg, head) {
     if (e.dead) return; const red = e.def.armor * (head ? 0.3 : 1); e.hp -= dmg * (1 - red); e.alerted = true;
     if (e.neutral) { e.neutral = false; e.state = 'hunt'; for (const q of this.enemies) if (q.neutral && Math.hypot(q.pos.x - e.pos.x, q.pos.z - e.pos.z) < 22) { q.neutral = false; q.state = 'hunt'; } }
-    this.alertAround(e.pos.x, e.pos.z, 14); e.flash = 0.08;
+    this.alertAround(e.pos.x, e.pos.z, 14); e.flash = 0.08; if (e.def.human) hitReact(e.mesh, head ? 1.2 : 0.7); else e.stag = 1;
     if (e.hp <= 0) this.killEnemy(e);
   }
   killEnemy(e) {
@@ -170,6 +174,7 @@ export class ExtractShip extends Surface {
     G.hp -= dmg * (1 - red); player.hurtT = 0.4; sfx('hit', 0.5);
   }
   shoot(e, player, d) {
+    if (e.ra) e.ra.rec = 1;
     const w = e.def.weapon; const eyeY = e.pos.y + (e.def.fly ? 1.0 : 1.45) * (e.def.size || 1);
     const from = V(e.pos.x, eyeY, e.pos.z), tgt = V(player.pos.x, player.pos.y + (player.crouch ? 0.8 : 1.3), player.pos.z);
     const acc = clamp(w.acc * (1 - d / w.range * 0.7) * (player.crouch ? 0.8 : 1) * (player.sprinting ? 0.8 : 1), 0.04, 0.9);
@@ -267,7 +272,7 @@ export class ExtractShip extends Surface {
       return;
     }
     // hunt
-    if (los) e.last = { x: px, z: pz };
+    if (los) { e.last = { x: px, z: pz }; e.gz = { x: px, y: player.pos.y + 1.5, z: pz }; }
     const tgt = e.last || { x: px, z: pz };
     const inRange = los && d <= w.range; const wantMove = !los || d > d0.prefer * 1.15 || (d0.fly && d > d0.prefer);
     e.pathT -= dt;
@@ -303,7 +308,10 @@ export class ExtractShip extends Surface {
     if (e.wind > 0) { if (!ok) { e.wind = 0; e.fireT = 0.7; if (ring) ring.scale.setScalar(1); } else { e.wind -= dt; if (ring) ring.scale.setScalar(1 + (1 - e.wind / w.wind) * 0.5 + Math.sin(e.t * 50) * 0.08); if (e.wind <= 0) { this.shoot(e, player, d); e.fireT = w.rate; if (ring) ring.scale.setScalar(1); } } }
     else if (ok && e.fireT <= 0) { e.wind = w.wind; sfx('ui', 0.6); }
   }
-  idleAnim(e, dt) { if (e.def.human) animateHuman(e.mesh, { idleT: e.t, arms: 'gun', aim: 0.7 }); else if (e.def.fly) { e.pos.y = 0.55 + Math.sin(e.t * 2) * 0.08; e.mesh.position.y = e.pos.y; e.mesh.userData.rotors.forEach(r => r.rotation.y += dt * 30); } }
+  idleAnim(e, dt) {
+    if (e.def.human) animateHuman(e.mesh, { dt, v: 0, idleT: e.t, arms: e.neutral ? 'relaxed' : e.state === 'hunt' ? 'gun' : 'lowgun', aim: 0.7, mood: e.neutral ? 0 : -0.6, gaze: e.state === 'hunt' ? e.gz : undefined });
+    else { if (e.def.fly) { e.pos.y = 0.55 + Math.sin(e.t * 2) * 0.08; e.mesh.position.y = e.pos.y; e.mesh.userData.rotors.forEach(r => r.rotation.y += dt * 30); } this.animRobot(e, dt, 0); }
+  }
   follow(e, dt, speed) {
     const p = e.path[e.pi]; const dx = p.x - e.pos.x, dz = p.z - e.pos.z, d = Math.hypot(dx, dz);
     if (d < 0.45) { e.pi++; return; } this.step(e, dx / d, dz / d, speed, dt); this.faceTo(e, dx, dz, dt); this.anim(e, dt, speed);
@@ -312,9 +320,34 @@ export class ExtractShip extends Surface {
   faceTo(e, dx, dz, dt) { if (Math.abs(dx) + Math.abs(dz) < 0.001) return; const a = Math.atan2(-dx, -dz); let df = a - e.mesh.rotation.y; while (df > Math.PI) df -= 2 * Math.PI; while (df < -Math.PI) df += 2 * Math.PI; e.mesh.rotation.y += df * Math.min(1, dt * 9); }
   anim(e, dt, speed) {
     e.gait += speed * dt * 2.6;
-    if (e.def.human) animateHuman(e.mesh, { phase: e.gait, speed: speed / 1.7, idleT: e.t, arms: 'gun', aim: 0.85 });
-    else if (!e.def.fly) { const L = e.mesh.userData.legs, s = Math.sin(e.gait) * Math.min(1, speed / 2.5) * 0.7; L[0].rotation.x = s; L[1].rotation.x = -s; }
-    else e.mesh.userData.rotors.forEach(r => r.rotation.y += dt * 40);
+    if (e.def.human) animateHuman(e.mesh, { dt, v: speed, speed: speed / 1.7, idleT: e.t, arms: e.neutral ? 'relaxed' : 'gun', aim: 0.85, mood: e.neutral ? 0 : -0.6, gaze: e.state === 'hunt' ? e.gz : undefined });
+    else { if (e.def.fly) e.mesh.userData.rotors.forEach(r => r.rotation.y += dt * 40); this.animRobot(e, dt, speed); }
+  }
+  // robots: servo-style motion (stepped head scans, snappy stiff-legged strides, torso twist/recoil, hover bob + tilt into movement, taser wind-up)
+  animRobot(e, dt, speed) {
+    const m = e.mesh, U = m.userData, A = e.ra || (e.ra = { t: Math.random() * 10, yaw: m.rotation.y, scanT: 0, scan: 0, scanC: 0, pitch: 0, roll: 0, twist: 0, lean: 0, rec: 0, hop: 0, spin: 0 });
+    A.t += dt; const k = (r) => Math.min(1, dt * r), moving = Math.min(1, speed / 2.2), t = A.t;
+    let yr = m.rotation.y - A.yaw; while (yr > Math.PI) yr -= 2 * Math.PI; while (yr < -Math.PI) yr += 2 * Math.PI; A.yaw = m.rotation.y; yr = Math.max(-8, Math.min(8, yr / Math.max(dt, 0.001)));
+    A.rec = Math.max(0, A.rec - dt * 5); const stag = Math.max(0, e.stag || 0); if (e.stag > 0) e.stag -= dt * 3;
+    A.scanT -= dt; if (A.scanT <= 0) { A.scanT = 0.5 + Math.random() * 1.1; A.scan = [0, 0.6, -0.6, 0.3, -0.3, 0.9, -0.9][Math.floor(Math.random() * 7)]; }   // idle scan: head snaps between stops like a servo
+    const hunting = e.state === 'hunt';
+    if (e.def.fly) {
+      const core = U.core, w = e.def.weapon, wind = e.wind > 0 && w.wind ? 1 - e.wind / w.wind : 0;
+      A.pitch += ((-0.2 * moving + wind * 0.32) - A.pitch) * k(7); A.roll += ((-yr * 0.035) + Math.sin(t * 1.3) * 0.03 - A.roll) * k(6);
+      core.rotation.x = A.pitch + (stag ? Math.sin(t * 60) * 0.12 * stag : 0); core.rotation.z = A.roll; core.position.y = 1 + Math.sin(t * 5.2) * 0.025;
+      A.spin += ((hunting ? 0 : A.scan * 0.7) - A.spin) * k(9); core.rotation.y = A.spin;
+      U.ring.rotation.z += dt * (1.2 + wind * 14); if (U.eye) U.eye.scale.setScalar(1 + 0.18 * Math.sin(t * 7) + wind * 0.7 + stag * 0.5);
+      U.prongs.forEach(p => { p.position.z = -0.36 - 0.12 * wind + (wind ? (Math.random() - 0.5) * 0.01 : 0); });
+    } else {
+      const L = U.legs, up = U.up, head = U.head, step = Math.sin(e.gait), sq = Math.sign(step) * Math.pow(Math.abs(step), 0.55);   // squared-off sine: stiff mechanical stride
+      L[0].rotation.x = sq * moving * 0.7; L[1].rotation.x = -sq * moving * 0.7;
+      A.hop = Math.abs(step) * moving; up.position.y = 0.82 + (1 - A.hop) * 0.0 - A.hop * 0.0 + Math.abs(step) * 0.035 * moving;
+      A.twist += (-sq * 0.1 * moving - A.twist) * k(10); A.lean += ((0.07 * moving + (hunting ? 0.04 : 0)) - A.lean) * k(6);
+      up.rotation.y = A.twist; up.rotation.x = A.lean - A.rec * 0.14 + (stag ? Math.sin(t * 50) * 0.1 * stag : 0);
+      if (U.arm) U.arm.rotation.x = -sq * 0.45 * moving;
+      A.spin += ((hunting ? 0 : A.scan) - A.spin) * k(14); head.rotation.y = A.spin; head.rotation.x = hunting ? -0.08 : Math.sin(t * 1.6) * 0.03;
+      if (U.visor) U.visor.scale.y = 1 + 0.5 * Math.max(0, Math.sin(t * 3)) * (hunting ? 1 : 0.2);
+    }
   }
   // ---------------- events ----------------
   linkOK(player) {

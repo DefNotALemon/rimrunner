@@ -6,7 +6,7 @@ import { PLANET_KINDS, ITEMS } from './data.js';
 import { G } from './state.js';
 import { buildPlayerShip, gunMesh, itemMesh } from './models.js';
 import { makePerson } from './gen.js';
-import { buildHuman, animateHuman, OUTFITS, outfitFor, setOutfit } from './people.js';
+import { buildHuman, animateHuman, OUTFITS, outfitFor, setOutfit, setTrait } from './people.js';
 import { HeightField, Terrain, Scatter } from './terrain.js';
 import { Sky } from './sky.js';
 import { makeBuilding, dressTown } from './buildings.js';
@@ -205,7 +205,7 @@ export class Surface {
 
   spawnNPC(prof, opts = {}) {
     const outfit = prof.outfit || (prof.outfit = outfitFor(prof.job, prof.seed));
-    const mesh = buildHuman(prof.look, outfit); this.root.add(mesh);
+    const mesh = buildHuman(prof.look, outfit); setTrait(mesh, prof.trait); this.root.add(mesh);
     const npc = { prof, mesh, pos: V(), vel: V(), target: null, wait: Math.random() * 3, t: Math.random() * 10, state: 'idle', hostile: false, hp: 60, gait: Math.random() * 6, ...opts };
     const mk = new THREE.Sprite(new THREE.SpriteMaterial({ map: signCanvasTex('!'), transparent: true, depthTest: false })); mk.scale.set(0.5, 0.5, 1); mk.position.y = 2.2; mk.visible = false; mesh.add(mk); npc.marker = mk;
     this.npcs.push(npc); return npc;
@@ -323,8 +323,19 @@ export class Surface {
     if (!n.route) this.collide(p, 0.35, 0); p.y = this.heightAt(p.x, p.z); n.mesh.position.copy(p);
     n.gait += sp * dt * 2.9;
     if (n.asleep && !n.talking) { const bd = n.bed && n.bed.bed; animateHuman(n.mesh, { ko: true, supine: true, speed: 0 }); if (bd && bd.R !== undefined) { n.mesh.rotation.y = bd.R + Math.PI; n.mesh.position.set(bd.x + Math.sin(bd.R) * 0.8, 0.6, bd.z + Math.cos(bd.R) * 0.8); } else n.mesh.position.y += 0.5; n.moving = false; return; }
-    animateHuman(n.mesh, { phase: n.gait, speed: sp / 1.7, idleT: n.t, arms: 'relaxed' });
+    this.lifeAnim(n, dt, player, sp);
     n.moving = sp > 0.1;
+  }
+  // NPC life: eye contact, greeting wave, talking gestures, working at stations, fear, seeded fidgets
+  lifeAnim(n, dt, player, sp) {
+    const p = n.pos, dx = player.pos.x - p.x, dz = player.pos.z - p.z, d = Math.hypot(dx, dz), calm = !n.fleeFrom && !n.hostile && !n.approach;
+    if (n.waveT > 0) n.waveT -= dt;
+    if (calm && !n.greeted && d < 8 && sp < 0.2 && !n.talking && !n.station && (n.t % 17) < 8) { n.greeted = true; n.waveT = 2.4; } else if (d > 28) n.greeted = false;
+    const atPost = n.station && !n.wander && sp < 0.1 && !n.talking, afraid = !!n.fleeFrom;
+    animateHuman(n.mesh, { v: sp, speed: sp / 1.7, idleT: n.t, arms: 'relaxed', dt,
+      talk: n.talking ? 1 : 0, wave: n.waveT > 0 && sp < 0.2 ? 1 : 0, work: atPost && !n.cop ? 'counter' : undefined, sit: n.sit ? 1 : 0,
+      gaze: (n.talking || (calm && d < 10) || n.waveT > 0) ? { x: player.pos.x, y: player.pos.y + 1.55, z: player.pos.z } : undefined,
+      mood: afraid ? 0.9 : n.hostile ? -1 : 0, mouth: afraid && sp > 1 ? 0.5 : 0 });
   }
   face(n, dx, dz) { if (Math.abs(dx) + Math.abs(dz) < 0.001) return; const a = Math.atan2(-dx, -dz); let d = a - n.mesh.rotation.y; while (d > Math.PI) d -= 6.283; while (d < -Math.PI) d += 6.283; n.mesh.rotation.y += d * 0.15; }
 }

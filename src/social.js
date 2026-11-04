@@ -3,6 +3,7 @@ import { rng, clamp, fmt } from './util.js';
 import { ITEMS, TECH, PLANET_KINDS, JOBS } from './data.js';
 import { G, toast, lvl, xp, addItem, removeItem, count, itemValue, takeAt, putAt } from './state.js';
 import { makePerson, systemAt } from './gen.js';
+import { hitReact } from './people.js';
 
 const TRAIT = {
   dry: ['Don\'t get me started.', 'Dry as the lane dust, me.'], warm: ['Pull up a stool, friend.', 'Glad to see a new face.'], nervous: ['Keep your voice down, would you?', 'I\'ve had a rough month.'],
@@ -222,7 +223,7 @@ export class Social {
 
   // ------- the law on foot -------
   hit(npc, dmg, head, player, surf, ui) {
-    if (npc.dead) return; npc.hp -= dmg; npc.fleeFrom = { x: player.pos.x, z: player.pos.z }; npc.fleeT = 0; npc.approach = false; npc.marker.visible = false;
+    if (npc.dead) return; hitReact(npc.mesh, head ? 1.2 : 0.8, player.pos.x, player.pos.z); npc.hp -= dmg; npc.fleeFrom = { x: player.pos.x, z: player.pos.z }; npc.fleeT = 0; npc.approach = false; npc.marker.visible = false;
     const witnessed = surf.npcs.some(n => n.prof.cop && !n.dead && Math.hypot(n.pos.x - npc.pos.x, n.pos.z - npc.pos.z) < 70);
     G.heat = Math.min(100, G.heat + 12);
     if (npc.prof.cop) { surf.npcs.filter(n => n.prof.cop).forEach(n => n.hostile = true); this.shotCop = true; }

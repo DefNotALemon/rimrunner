@@ -419,7 +419,11 @@ export class Player {
     const b = this.body, J = b.userData.J; b.position.copy(this.pos); this.pack3.position.y = 0.3 + this.crouchBlend * 0.04; b.rotation.order = 'YXZ'; b.rotation.y = this.bodyYaw;
     const full = this.tp > 0.3; J.head.visible = full; J.armL.visible = J.armR.visible = full;   // first person uses the viewmodel arms
     const gun = G.hand; let arms = 'relaxed'; if (gun) arms = this.gunUp > 0.5 ? 'gun' : 'lowgun'; else if (this.leaning) arms = 'wallhands';
-    animateHuman(b, { phase: Math.PI * 2 * this.gait, speed: speed / 4.4, crouch: this.crouchBlend, arms, aim: this.gunUp, pitch: -this.pitch * 0.7, idleT: G.time, look: clamp(this.pitch, -1.5, 0.8) });   // camera pitch (+ = up): looking down tips the head forward (chin to chest) so it never swings back through the body
+    const fy = -Math.sin(this.bodyYaw), fz = -Math.cos(this.bodyYaw), vf = this.vel.x * fy + this.vel.z * fz, vr = this.vel.x * -fz + this.vel.z * fy;   // velocity in body space: strafe / backpedal animation
+    let hy = this.yaw - this.bodyYaw; while (hy > Math.PI) hy -= 6.283; while (hy < -Math.PI) hy += 6.283;
+    animateHuman(b, { dt, v: speed, speed: speed / 4.4, crouch: this.crouchBlend, arms, aim: this.gunUp, pitch: -this.pitch * 0.7, idleT: G.time, look: clamp(this.pitch, -1.5, 0.8), headYaw: hy,   // camera pitch (+ = up): looking down tips the head forward (chin to chest) so it never swings back through the body
+      strafe: speed > 0.3 ? Math.max(-1, Math.min(1, vr / speed)) : 0, back: speed > 0.3 && vf < -0.35 * speed, air: !this.onGround, vy: this.vel.y });
+    const fx = b.userData.fx; if (fx) { this.pack3.rotation.x = fx.pack; this.pack3.position.y += fx.bounce; }
     if (this.beam.visible && !gun) { J.armR.rotation.x = 1.3; J.elbowR.rotation.x = 0.3; }
     b.rotation.z = 0; b.rotation.x = 0;
     if (this.lean > 0.01) { const L = this.lean; if (this.leanKind === 'right') b.rotation.z = -0.16 * L; else if (this.leanKind === 'left') b.rotation.z = 0.16 * L; else if (this.leanKind === 'back') { J.spine.rotation.x += 0.1 * L; J.legR.rotation.x -= 0.5 * L; J.kneeR.rotation.x -= 0.6 * L; } else J.spine.rotation.x -= 0.2 * L; J.legR.rotation.z -= 0.08 * L; }
