@@ -195,8 +195,9 @@ export function buildShip(ship, S) {
     const sgn = p.dir === 'w' ? -1 : 1, bx0 = p.dir === 'w' ? -7 : W, bx1 = p.dir === 'w' ? 0 : W + 7, wx = p.dir === 'w' ? 0 : W;
     box('matte', 0x23262b, bx0, bx1, -0.3, 0, p.z - 2.8, p.z + 2.8); box('matte', 0x15181c, bx0, bx1, H, H + 0.3, p.z - 2.8, p.z + 2.8);
     const wc = jit(corp.dado), t = 0.3;
-    box('matte', wc, bx0, bx1, 0, H, p.z - 2.8 - t, p.z - 2.8); box('matte', wc, bx0, bx1, 0, H, p.z + 2.8, p.z + 2.8 + t); box('matte', wc, p.dir === 'w' ? bx0 - t : bx1, p.dir === 'w' ? bx0 : bx1 + t, 0, H, p.z - 2.8 - t, p.z + 2.8 + t);
-    col(bx0, bx1, p.z - 2.8 - t, p.z - 2.8, H); col(bx0, bx1, p.z + 2.8, p.z + 2.8 + t, H); col(p.dir === 'w' ? bx0 - t : bx1, p.dir === 'w' ? bx0 : bx1 + t, p.z - 2.8 - t, p.z + 2.8 + t, H);
+    const endW = !(p.mine && ship.contract && ship.contract.homeDock);   // your own ship (homeship.js) is welded on where the tube end wall was
+    box('matte', wc, bx0, bx1, 0, H, p.z - 2.8 - t, p.z - 2.8); box('matte', wc, bx0, bx1, 0, H, p.z + 2.8, p.z + 2.8 + t); if (endW) box('matte', wc, p.dir === 'w' ? bx0 - t : bx1, p.dir === 'w' ? bx0 : bx1 + t, 0, H, p.z - 2.8 - t, p.z + 2.8 + t);
+    col(bx0, bx1, p.z - 2.8 - t, p.z - 2.8, H); col(bx0, bx1, p.z + 2.8, p.z + 2.8 + t, H); if (endW) col(p.dir === 'w' ? bx0 - t : bx1, p.dir === 'w' ? bx0 : bx1 + t, p.z - 2.8 - t, p.z + 2.8 + t, H);
     box('emis', p.mine ? 0x66ffaa : 0xff5a3a, (p.dir === 'w' ? -3.6 : W + 3) , (p.dir === 'w' ? -3 : W + 3.6), H - 0.08, H, p.z - 0.5, p.z + 0.5); S.lamps.push({ x: p.dir === 'w' ? -3.3 : W + 3.3, z: p.z });
     if (!p.mine) {   // sealed hatch in the hull wall until a ship docks here
       const hm = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.6, 2.6), new THREE.MeshStandardMaterial({ color: 0x4a1f1a, metalness: 0.6, roughness: 0.5, emissive: 0x501008 })); hm.position.set(wx, 1.3, p.z); S.root.add(hm);
